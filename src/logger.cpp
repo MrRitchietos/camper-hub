@@ -70,7 +70,7 @@ static void add_day_ram(const DayRec &d) {
 
 void logger_demo_days() {             // 14 made-up days so the history screens can be judged now
   Lock l;
-  S.days.clear();
+  S.days.clear(); S.days.reserve(15);
   time_t now = time(nullptr); if (now < 1700000000) now = 1793577600;
   for (int i = 14; i >= 1; i--) {
     time_t d = now - i * 86400; struct tm t; localtime_r(&d, &t);
@@ -247,7 +247,7 @@ namespace app {
 void logger_begin() {
   dayq = xQueueCreate(4, sizeof(DayRec));
   evq = xQueueCreate(10, sizeof(Ev));
-  xTaskCreatePinnedToCore(task, "sdlog", 6144, nullptr, 0, nullptr, 0);
+  xTaskCreatePinnedToCore(task, "sdlog", 6144, nullptr, 0, &task_sd, 0);
 }
 
 }  // namespace app

@@ -170,7 +170,7 @@ extern SdInfo SDI;
 int photos_count();
 // ---- phone page (web.cpp); changes come to the UI task through a queue
 struct WebCmd { char op[8]; char key[12]; int a, b; char text[72]; };
-void web_begin_code(); const char *web_code();
+void web_begin_code(); const char *web_code(); bool web_set_pass(const char *p);
 void web_enable(bool on); bool web_on();
 bool web_cmd_pop(WebCmd &c);
 void ap_enable(bool on);                       // radio.cpp

@@ -34,6 +34,7 @@ void store_service();
 bool store_auto_restore();
 void web_start_task();
 void sd_restart();
+extern TaskHandle_t task_radio, task_sd, task_web;
 void ota_check(); void ota_boot_guard(); void ota_boot_ok();
 extern char ota_msg[48]; extern volatile bool ota_done;                                  // unmount the card, then restart
 // time helpers

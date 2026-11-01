@@ -52,7 +52,7 @@ void ota_check() {
   if (!cfg.auto_update) return;
   if (WiFi.status() != WL_CONNECTED) return;
   extern volatile bool ntp_synced;
-  for (int i = 0; i < 100 && !ntp_synced; i++) delay(100);        // certificates need the right date
+  for (int i = 0; i < 200 && !ntp_synced; i++) delay(100);        // certificates need the right date
   if (!ntp_synced) { msg("no clock yet, check later"); return; }
   WiFiClientSecure c;
   c.setCACert(GITHUB_ROOTS);

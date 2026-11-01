@@ -109,6 +109,6 @@ let last='',shown='';async function render(force){if(!S)return;const m=$('#main'
 if(['Lists','Trips','Files','Settings'].includes(tab)){if(!force)return;
 const fn={Lists:lists,Trips:trips,Files:files,Settings:async()=>settings()}[tab];m.innerHTML=await fn(true);return}
 const h={Live:live,Bank:bank,Weather:weather,Level:level}[tab]();if(h!=last||force){if(document.activeElement&&document.activeElement.tagName=='INPUT'&&!force)return;m.innerHTML=h;last=h}}
-nav();load();setInterval(()=>{if(!document.hidden)load()},3000);
+nav();load();setInterval(()=>{if(!document.hidden)load()},4000);
 </script></body></html>)HTML";
 }  // namespace app

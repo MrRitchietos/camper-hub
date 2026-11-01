@@ -12,7 +12,7 @@ Firmware for the ESP32-2432S028 board (the "Cheap Yellow Display", 320x240 touch
 * Checklists for leaving and arriving
 * Trip diary, one line per day on the SD card
 * Screensaver with the van under the sky or your own photos
-* Phone page: open the board's address in a browser to see everything and change settings
+* Phone page: open the board's address in a browser to see everything and change settings. User `camper`, the password is shown and can be changed in Tools > Settings > Phone login. Switch the page off in Settings to save memory
 
 ## SD card
 

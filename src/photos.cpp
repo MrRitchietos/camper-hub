@@ -119,7 +119,10 @@ static bool show(int k) {
   int W = t.width(), Hh = t.height();
   // landscape photo on the landscape screen: fill it (crop the edges); portrait: fit (black sides)
   float z = turn ? min((float)W / j.w, (float)Hh / j.h) : max((float)W / j.w, (float)Hh / j.h);
-  bool ok = t.drawJpgFile(SD, path, W / 2, Hh / 2, W, Hh, 0, 0, z, z, lgfx::datum_t::middle_center);
+  int x = (W - (int)(j.w * z)) / 2, y = (Hh - (int)(j.h * z)) / 2;    // centred; negative = cropped edges
+  t.setClipRect(0, 0, W, Hh);
+  bool ok = t.drawJpgFile(SD, path, x, y, 0, 0, 0, 0, z, z);
+  t.clearClipRect();
   if (turn) t.setRotation(0);
   Serial.printf("photo %s %dx%d o%d z%.3f %s %u ms\n", path, j.w, j.h, j.orient, z, ok ? "ok" : "FAIL", (unsigned)(millis() - t0));
   if (!ok) return false;

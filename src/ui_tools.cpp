@@ -90,7 +90,7 @@ static void add_done(const char *s) {
 static void cseg_cb(lv_event_t *e) { list_i = (int)(intptr_t)lv_event_get_user_data(e); seg_set(cseg, list_i); dirty = true; }
 
 // ---------------------------------------------------------------- settings rows
-enum { S_PLACE, S_WIFI, S_WEB, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_INFO, S_N };
+enum { S_PLACE, S_WIFI, S_WEB, S_PASS, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_INFO, S_N };
 static void open_sd(); static void open_web();
 static const int16_t ALARMS[] = {0, 1150, 1180, 1200, 1220, 1250, 1280};
 static void set_tap(int k) {
@@ -111,7 +111,18 @@ static void set_tap(int k) {
         toast(m); }
       break;
     }
-    case S_WEB: if (!cfg.web) { cfg.web = true; save_settings(); web_enable(true); } open_web(); break;
+    case S_WEB:
+      cfg.web = !cfg.web; save_settings(); web_enable(cfg.web);
+      if (cfg.web) open_web(); else { if (cfg.ap) { cfg.ap = false; save_settings(); ap_enable(false); } toast("Phone page off (no memory used)"); }
+      break;
+    case S_PASS:
+      open_text(LV_SYMBOL_EDIT "  Phone page password", "8 to 32 characters", 32, nullptr, [](const char *p) {
+        if (!p[0]) return;
+        if (!web_set_pass(p)) { toast("Use 8 to 32 letters or numbers"); return; }
+        if (cfg.ap) { ap_enable(false); delay(300); ap_enable(true); }
+        toast("Password saved");
+      });
+      break;
     case S_AP: cfg.ap = !cfg.ap; if (cfg.ap && !cfg.web) { cfg.web = true; web_enable(true); } save_settings(); ap_enable(cfg.ap);
                if (cfg.ap) open_web(); else toast("Own WiFi off"); break;
     case S_SD: open_sd(); break;
@@ -166,7 +177,7 @@ static void web_text() {
   if (w) k += snprintf(b + k, sizeof b - k, "   http://%s   (same WiFi)\n", ip);
   if (cfg.ap) k += snprintf(b + k, sizeof b - k, "   or join WiFi CamperHub, then http://192.168.4.1\n");
   if (!w && !cfg.ap) k += snprintf(b + k, sizeof b - k, "   (no WiFi now: turn on Own WiFi)\n");
-  snprintf(b + k, sizeof b - k, "Login: camper   Code: %s", web_code());
+  snprintf(b + k, sizeof b - k, "User: camper    Password: %s", web_code());
   set_txt(web_l, b);
 }
 static void open_web() {
@@ -178,7 +189,7 @@ static void open_web() {
   lv_obj_set_pos(web_l, 10, 40);
   web_text();
   lv_obj_t *hint = label(m, F12, C_DIM, "Live values, power bank, all settings, checklists, photos and log files. "
-                                         "The own WiFi CamperHub uses the same code as password.");
+                                         "The own WiFi CamperHub uses the same password. Change it in Settings > Phone login.");
   lv_obj_set_width(hint, 304);
   lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
   lv_obj_set_pos(hint, 10, 146);
@@ -381,6 +392,7 @@ void tools_update(bool force) {
     set_row(S_WIFI, LV_SYMBOL_WIFI "  WiFi", w, S.portal ? C_AMBER : S.wifi ? C_TEAL : C_DIM); }
   { char ip[24] = "off"; if (cfg.web) { if (S.wifi) { IPAddress a(S.ip); strlcpy(ip, a.toString().c_str(), sizeof ip); } else strcpy(ip, cfg.ap ? "192.168.4.1" : "on (no WiFi)"); }
     set_row(S_WEB, LV_SYMBOL_EYE_OPEN "  Phone page", ip, cfg.web ? C_TEAL : C_DIM); }
+  set_row(S_PASS, LV_SYMBOL_EDIT "  Phone login", "camper / change", C_DIM);
   set_row(S_AP, LV_SYMBOL_WIFI "  Own WiFi", cfg.ap ? "CamperHub" : "off", cfg.ap ? C_TEAL : C_DIM);
   set_row(S_KEY, LV_SYMBOL_CHARGE "  Victron key", S.vic.have_key ? "set" : "enter", S.vic.have_key ? C_GREEN : C_AMBER);
   set_row(S_BATT, LV_SYMBOL_BATTERY_FULL "  Battery type", BT[S.vic.batt % 3]);

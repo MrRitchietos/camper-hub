@@ -1,6 +1,7 @@
 // Phone page: http://<board address>/ (or http://192.168.4.1 on the board's own WiFi "CamperHub").
-// Login: user "camper", password = the 8 digit code shown in Settings. Runs in the logger task (it owns the SD
-// card). Everything that changes the UI state goes through a queue that the UI task drains (ui::web_drain).
+// Login: user "camper", password shown and changeable in Settings (also the password of the own WiFi). Runs in its
+// own task that only exists while the page is switched on (no RAM used when off). Everything that changes the UI
+// state goes through a queue that the UI task drains (ui::web_drain).
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -14,10 +15,24 @@ namespace app {
 
 static WebServer *srv = nullptr;
 static QueueHandle_t q;
-static char code[9] = "";
+static char code[33] = "";
 static volatile bool enabled = false;
 const char *web_code() { return code; }
-void web_enable(bool on) { enabled = on; }
+static void task(void *);
+static bool started = false;                         // setup has finished: tasks may be made
+void web_enable(bool on) {
+  enabled = on;
+  if (on && started && !task_web) xTaskCreatePinnedToCore(task, "web", 5632, nullptr, 1, &task_web, 0);
+}
+bool web_set_pass(const char *p) {                   // 8..32 characters (WiFi WPA2 needs at least 8)
+  size_t n = strlen(p);
+  if (n < 8 || n > 32) return false;
+  for (const char *c = p; *c; c++) if (*c < 33 || *c > 126) return false;
+  Preferences pr; pr.begin("camper", false); pr.putString("code", p); pr.end();
+  strlcpy(code, p, sizeof code);
+  log_event("phone page password changed");
+  return true;
+}
 bool web_on() { return srv != nullptr; }
 bool web_cmd_pop(WebCmd &c) { return q && xQueueReceive(q, &c, 0) == pdTRUE; }
 static void push(const char *op, const char *key, int a, int b = 0, const char *text = "") {
@@ -27,7 +42,7 @@ static void push(const char *op, const char *key, int a, int b = 0, const char *
 void web_begin_code() {
   Preferences p; p.begin("camper", false);
   String c = p.getString("code", "");
-  if (c.length() != 8) { char b[9]; snprintf(b, sizeof b, "%08u", (unsigned)(esp_random() % 100000000u)); c = b; p.putString("code", c); }
+  if (c.length() < 8) { char b[9]; snprintf(b, sizeof b, "%08u", (unsigned)(esp_random() % 100000000u)); c = b; p.putString("code", c); }
   strlcpy(code, c.c_str(), sizeof code);
   p.end();
   if (!q) q = xQueueCreate(8, sizeof(WebCmd));
@@ -35,6 +50,10 @@ void web_begin_code() {
 
 extern const char PAGE[];
 static bool auth() {
+  if (ESP.getFreeHeap() < 16000 || heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 6000) {   // never push the board over
+    srv->send(503, "text/plain", "busy, try again");
+    return false;
+  }
   if (srv->authenticate("camper", code)) return true;
   srv->requestAuthentication(BASIC_AUTH, "Camper hub");
   return false;
@@ -44,6 +63,21 @@ static String arg(const char *n) { return srv->hasArg(n) ? srv->arg(n) : String(
 static bool safe_name(const String &n) { return n.length() && n.length() < 64 && n.indexOf('/') < 0 && n.indexOf("..") < 0 && n[0] != '.'; }
 static String dir_of(const String &d) { return d == "photos" ? "/camper/photos" : "/camper"; }
 
+// JSON straight to the socket in 512 byte pieces (no big String in RAM)
+struct Out {
+  uint8_t b[512]; size_t n = 0;
+  size_t write(uint8_t c) { b[n++] = c; if (n == sizeof b) flush(); return 1; }
+  size_t write(const uint8_t *p, size_t l) { for (size_t i = 0; i < l; i++) write(p[i]); return l; }
+  void flush() { if (n) srv->sendContent((const char *)b, n); n = 0; }
+};
+static void send_json(JsonDocument &d) {
+  srv->setContentLength(CONTENT_LENGTH_UNKNOWN);
+  srv->send(200, "application/json", "");
+  Out *o = new (std::nothrow) Out;
+  if (!o) { srv->sendContent("{}"); srv->sendContent(""); return; }
+  serializeJson(d, *o); o->flush(); delete o;
+  srv->sendContent("");
+}
 static void j_num(JsonObject o, const char *k, float v, int dec = 1) { if (!isnan(v)) o[k] = serialized(String(v, dec)); }
 
 static void api_state() {
@@ -123,8 +157,7 @@ static void api_state() {
       j_num(o, "vmin", td.vmin, 2); j_num(o, "kwh", td.kwh, 2);
     }
   }
-  String out; serializeJson(d, out);
-  srv->send(200, "application/json", out);
+  send_json(d);
 }
 
 static void api_lists() {
@@ -138,8 +171,7 @@ static void api_lists() {
     for (int i = 0; i < n; i++) { snprintf(key, sizeof key, "%c%d", k ? 'b' : 'a', i); JsonObject it = a.add<JsonObject>(); it["t"] = p.getString(key, "?"); it["d"] = (bool)(m >> i & 1); }
   }
   p.end();
-  String out; serializeJson(d, out);
-  srv->send(200, "application/json", out);
+  send_json(d);
 }
 
 static void api_files() {
@@ -162,22 +194,24 @@ static void api_files() {
   srv->send(200, "application/json", out);
 }
 
-bool ble_stop();
+bool ble_stop(); void ble_pause(bool on);
 static bool fw_busy = false;
 static File up;
 static String up_err;
 static void upload_file() {
   HTTPUpload &u = srv->upload();
   if (u.status == UPLOAD_FILE_START) {
-    up_err = "";
+    up_err = ""; ble_pause(true);
     String d = dir_of(arg("d")), n = u.filename;
     int s = n.lastIndexOf('/'); if (s >= 0) n = n.substring(s + 1);
     if (!safe_name(n)) { up_err = "bad name"; return; }
     SD.mkdir(d.c_str());
     up = SD.open((d + "/" + n).c_str(), FILE_WRITE);
     if (!up) up_err = "cannot write the card";
-  } else if (u.status == UPLOAD_FILE_WRITE) { if (up) up.write(u.buf, u.currentSize); }
-  else if (u.status == UPLOAD_FILE_END || u.status == UPLOAD_FILE_ABORTED) { if (up) up.close(); }
+  } else if (u.status == UPLOAD_FILE_WRITE) {
+    if (up) up.write(u.buf, u.currentSize);
+  }
+  else if (u.status == UPLOAD_FILE_END || u.status == UPLOAD_FILE_ABORTED) { if (up) up.close(); ble_pause(false); }
 }
 static void upload_fw() {
   HTTPUpload &u = srv->upload();
@@ -247,10 +281,17 @@ static bool web_service() {
     srv->begin();
     Serial.printf("web: on, heap %u\n", (unsigned)ESP.getFreeHeap());
   } else if (!want && srv) { srv->stop(); delete srv; srv = nullptr; Serial.println("web: off"); }
-  if (srv) srv->handleClient();
+  // only take a request while the board has room for it (else it waits in the network queue a moment)
+  if (srv && ESP.getFreeHeap() > 26000 && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > 12000) srv->handleClient();
   return srv != nullptr;
 }
-static void task(void *) { for (;;) { bool on = web_service(); delay(on ? 4 : 500); } }
-void web_start_task() { xTaskCreatePinnedToCore(task, "web", 7168, nullptr, 1, nullptr, 0); }
+static void task(void *) {
+  for (;;) {
+    bool on = web_service();
+    if (!enabled && !srv) { Serial.println("web: task gone"); task_web = nullptr; vTaskDelete(nullptr); }
+    delay(on ? 4 : 200);
+  }
+}
+void web_start_task() { started = true; if (enabled) web_enable(true); }
 
 }  // namespace app

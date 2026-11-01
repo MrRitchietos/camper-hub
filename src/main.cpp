@@ -31,7 +31,7 @@ static LGFX tft;
 LGFX &app_tft() { return tft; }
 namespace app { bool photos_begin(); void photos_tick(); }
 static bool photo_mode = false;          // the photo screensaver draws straight to the panel: LVGL flushes are dropped
-static constexpr int W = 320, H = 240, BUF_LINES = 16;
+static constexpr int W = 320, H = 240, BUF_LINES = 10;
 static uint32_t last_touch = 0;
 static bool dimmed = false, dark = false;
 static volatile bool want_wake = false;
@@ -149,6 +149,7 @@ static void console() {
     else if (cmd.startsWith("pv ")) ui::power_view_test(cmd.substring(3).toInt());
     else if (cmd.startsWith("bs ")) ui::bank_settings_test(cmd.substring(3).toInt());
     else if (cmd == "bank") { app::Lock l; auto &b = app::S.bank; Serial.printf("bank conn=%d soc=%.1f in=%d out=%d usb=%d dc=%d ac=%d light=%d key=%d screen=%d acsb=%d idle=%d\n", b.connected, b.soc, b.in_w, b.out_w, b.usb, b.dc, b.ac, b.light_mode, b.s_key, b.s_screen, b.s_ac_sb, b.s_idle); }
+    else if (cmd == "tasks") Serial.printf("stack free: radio %u sd %u web %u loop %u\n", uxTaskGetStackHighWaterMark(task_radio), uxTaskGetStackHighWaterMark(task_sd), task_web ? uxTaskGetStackHighWaterMark(task_web) : 0, uxTaskGetStackHighWaterMark(nullptr));
     else if (cmd == "heap") Serial.printf("heap %u min %u big %u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
   }
 }

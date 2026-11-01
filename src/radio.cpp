@@ -15,6 +15,7 @@
 namespace app {
 
 State S;
+TaskHandle_t task_radio, task_sd, task_web;
 SemaphoreHandle_t mtx;
 volatile bool demo_on = false;
 volatile bool ntp_synced = false;
@@ -26,7 +27,12 @@ static Preferences prefs;
 
 void request_wifi_scan() { want_scan = true; }
 volatile bool ota_done = false;
-volatile bool ble_off = false; static volatile bool want_ble_off = false;
+volatile bool ble_off = false;
+static volatile uint32_t ble_pause_until = 0; static bool ble_paused = false;
+void ble_pause(bool on) {                            // uploads from the phone: the scan takes radio time WiFi needs
+  ble_pause_until = on ? millis() + 60000 : 0;
+  if (on) for (int i = 0; i < 25 && !ble_paused; i++) delay(20);
+} static volatile bool want_ble_off = false;
 bool ble_stop() {                                    // firmware upload: Bluetooth off frees ~30 KB (restart after)
   want_ble_off = true;
   for (int i = 0; i < 150 && !ble_off; i++) delay(20);
@@ -183,7 +189,7 @@ static void ble_begin() {
   sc->setMaxResults(0);                               // nothing stored: runs for months
   NimBLEDevice::setMTU(247);                          // Fossibot replies are 168 bytes
   sc->setInterval(100);
-  sc->setWindow(60);
+  sc->setWindow(45);                                  // 45 % of the radio: sensors still caught, WiFi stays quick
   sc->start(0, false, true);
 }
 
@@ -221,7 +227,10 @@ static void task(void *) {
       NimBLEDevice::getScan()->stop(); NimBLEDevice::deinit(true); ble_off = true;
       Serial.printf("bluetooth off for the update, heap %u big %u\n", (unsigned)ESP.getFreeHeap(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
-    if (!ble_off && ble_cb.restart) { ble_cb.restart = false; NimBLEDevice::getScan()->start(0, false, true); }
+    bool want_pause = ble_pause_until && (int32_t)(ble_pause_until - millis()) > 0;
+    if (!ble_off && want_pause && !ble_paused) { ble_paused = true; NimBLEDevice::getScan()->stop(); }
+    if (!ble_off && !want_pause && ble_paused) { ble_paused = false; ble_pause_until = 0; ble_cb.restart = true; }
+    if (!ble_off && !ble_paused && ble_cb.restart) { ble_cb.restart = false; NimBLEDevice::getScan()->start(0, false, true); }
     if (now - last_tick >= 1000) { last_tick = now; vic_tick(); sens_tick(); }
     if (!ble_off) bank_service();
     if (now - last_link > 2000) {
@@ -250,7 +259,7 @@ void radio_begin() {
   prefs.begin("wifi", false);
   vic_begin();
   sens_begin();
-  xTaskCreatePinnedToCore(task, "radio", 12288, nullptr, 1, nullptr, 0);
+  xTaskCreatePinnedToCore(task, "radio", 9216, nullptr, 1, &task_radio, 0);
 }
 
 }  // namespace app
