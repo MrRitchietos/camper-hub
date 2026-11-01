@@ -50,8 +50,13 @@ void web_begin_code() {
 
 extern const char PAGE[];
 static bool login();
-static bool auth() {
-  if (ESP.getFreeHeap() < 20000 || heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 8000) {   // never push the board over
+// enough memory for a request? Tested: below this the rest of the board (files, lists, Bluetooth) can run out.
+// The page simply retries live values; a button shows "busy, try again".
+static bool room(bool) {
+  return ESP.getFreeHeap() >= 20000u && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >= 8000u;
+}
+static bool auth(bool heavy = false) {
+  if (!room(heavy)) {                                  // never push the board over
     srv->send(503, "text/plain", "busy, try again");
     return false;
   }
@@ -209,11 +214,13 @@ bool ble_stop(); void ble_pause(bool on);
 static bool fw_busy = false;
 static File up;
 static String up_err;
-static bool up_ok = false;                           // login checked once at the start of an upload
+static bool up_ok = false, up_busy = false;          // login + memory checked once at the start of an upload
 static void upload_file() {
   HTTPUpload &u = srv->upload();
   if (u.status == UPLOAD_FILE_START) {
-    up_err = ""; up_ok = login();
+    up_err = ""; up_busy = false;
+    if (!room(true)) { up_busy = true; up_ok = false; return; }
+    up_ok = login();
     if (!up_ok) return;
     ble_pause(true);
     String d = dir_of(arg("d")), n = u.filename;
@@ -271,7 +278,7 @@ static void routes() {
     SD.remove(path.c_str()); ok();
   });
   srv->on("/f", HTTP_GET, [] {
-    if (!auth()) return;
+    if (!auth(true)) return;
     String n = arg("n");
     if (!safe_name(n)) { srv->send(400, "text/plain", "bad name"); return; }
     File f = SD.open((dir_of(arg("d")) + "/" + n).c_str());
@@ -281,7 +288,7 @@ static void routes() {
     srv->streamFile(f, type);
     f.close();
   });
-  srv->on("/upload", HTTP_POST, [] { if (!up_ok) { login(); return; } if (up_err.length()) srv->send(500, "text/plain", up_err); else ok(); }, upload_file);
+  srv->on("/upload", HTTP_POST, [] { if (up_busy) { up_busy = false; srv->send(503, "text/plain", "busy, try again"); return; } if (!up_ok) { login(); return; } if (up_err.length()) srv->send(500, "text/plain", up_err); else ok(); }, upload_file);
   srv->on("/update", HTTP_POST, [] {
     if (!up_ok) { login(); return; }
     bool bad = up_err.length() || Update.hasError();
