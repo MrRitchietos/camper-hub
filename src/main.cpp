@@ -152,6 +152,22 @@ static void console() {
   }
 }
 
+static void lvgl_begin() {
+  lv_init();
+  lv_tick_set_cb(tick_cb);
+  lv_display_t *disp = lv_display_create(W, H);
+  size_t sz = W * BUF_LINES * 2;
+  void *b1 = heap_caps_malloc(sz, MALLOC_CAP_DMA);
+  if (!b1) { Serial.println("no RAM for the screen buffer, restarting"); delay(1000); ESP.restart(); }
+  lv_display_set_buffers(disp, b1, nullptr, sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_flush_cb(disp, flush);
+  lv_display_set_flush_wait_cb(disp, [](lv_display_t *) { tft.waitDMA(); });
+  lv_indev_t *in = lv_indev_create();
+  lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_read_cb(in, read_touch);
+  Serial.printf("heap after display %u\n", (unsigned)ESP.getFreeHeap());
+}
+
 void setup() {
   Serial.begin(115200);
   ota_boot_guard();
@@ -167,19 +183,10 @@ void setup() {
   tft.fillScreen(0x0000);
   tft.initDMA();
 
-  lv_init();
-  lv_tick_set_cb(tick_cb);
-  lv_display_t *disp = lv_display_create(W, H);
-  size_t sz = W * BUF_LINES * 2;
-  void *b1 = heap_caps_malloc(sz, MALLOC_CAP_DMA);
-  if (!b1) { Serial.println("no RAM for the screen buffer, restarting"); delay(1000); ESP.restart(); }
-  lv_display_set_buffers(disp, b1, nullptr, sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
-  lv_display_set_flush_cb(disp, flush);
-  lv_display_set_flush_wait_cb(disp, [](lv_display_t *) { tft.waitDMA(); });
-  lv_indev_t *in = lv_indev_create();
-  lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
-  lv_indev_set_read_cb(in, read_touch);
-
+  // LVGL takes its 40 KB pool here. When an update was asked for, that waits until after the GitHub check:
+  // the secure download needs about 40 KB in one piece.
+  bool upd = app::ota_wanted();
+  if (!upd) lvgl_begin();
   Serial.printf("heap after display %u\n", (unsigned)ESP.getFreeHeap());
   web_begin_code();
   web_enable(cfg.web);
@@ -187,12 +194,12 @@ void setup() {
   radio_begin();
   {                                                    // the update check at start needs the RAM the screen takes later
     tft.setTextColor(0x8C71, 0x0000); tft.setFont(&fonts::Font2); tft.setTextDatum(lgfx::middle_center);
-    bool upd = app::ota_wanted();
     tft.drawString("Camper hub " FW_VERSION, 160, 110); tft.drawString(upd ? "looking for an update, please wait..." : "starting...", 160, 130);
     uint32_t t0 = millis();
     while (!app::ota_done && millis() - t0 < (upd ? 300000UL : 20000UL)) delay(50);
     tft.setTextDatum(lgfx::top_left);
   }
+  if (upd) lvgl_begin();
   delay(500);
   Serial.printf("heap after radio %u\n", (unsigned)ESP.getFreeHeap());
   logger_begin();
