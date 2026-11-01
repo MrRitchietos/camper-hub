@@ -7,7 +7,7 @@
 #include "hw.hpp"
 #include "internal.hpp"
 
-namespace ui { void saver_show(bool on); void saver_tick(); bool saver_on(); void begin(); bool alarm_active(); void goto_tab(int i); void open_forecast_test(int view); void close_modal(); void power_view_test(int i); void tools_view_test(int i); void open_place(); void bank_settings_test(int tap); }
+namespace ui { void saver_show(bool on); void saver_tick(); bool saver_on(); void begin(); bool alarm_active(); void goto_tab(int i); void open_forecast_test(int view); void close_modal(); void power_view_test(int i); void tools_view_test(int i); void open_place(); void bank_settings_test(int tap); void look_request(); }
 namespace app {
 Settings cfg;
 static Preferences sp;
@@ -15,14 +15,14 @@ void save_settings() {
   sp.putUChar("bright", cfg.bright); sp.putBool("beep", cfg.beep);
   sp.putUShort("wb", cfg.len_cm); sp.putUShort("trk", cfg.width_cm); sp.putUChar("rot", cfg.lvl_rot);
   sp.putUChar("saver", cfg.saver); sp.putUChar("scroff", cfg.scr_off);
-  sp.putUChar("look", cfg.saver_look); sp.putBool("web", cfg.web); sp.putBool("ap", cfg.ap);
+  sp.putUChar("look", cfg.saver_look); sp.putBool("web", cfg.web); sp.putBool("ap", cfg.ap); sp.putUChar("thm", cfg.look_mode);
 }
 static void load_settings() {
   sp.begin("camper", false);
   cfg.bright = sp.getUChar("bright", 0); cfg.beep = sp.getBool("beep", true);
   cfg.len_cm = sp.getUShort("wb", 404); cfg.width_cm = sp.getUShort("trk", 180); cfg.lvl_rot = sp.getUChar("rot", 0);
   cfg.saver = sp.getUChar("saver", 3) % 6; cfg.scr_off = sp.getUChar("scroff", 2) % 5;
-  cfg.saver_look = sp.getUChar("look", 0) % 2; cfg.web = sp.getBool("web", false); cfg.ap = sp.getBool("ap", false);
+  cfg.saver_look = sp.getUChar("look", 0) % 2; cfg.web = sp.getBool("web", false); cfg.ap = sp.getBool("ap", false); cfg.look_mode = sp.getUChar("thm", 0) % 3;
 }
 }  // namespace app
 using namespace app;
@@ -131,6 +131,7 @@ static void console() {
     else if (cmd.startsWith("ts ")) ui::tools_view_test(cmd.substring(3).toInt());
     else if (cmd == "place") ui::open_place();
     else if (cmd == "saver") { dimmed = true; ui::saver_show(true); }
+    else if (cmd.startsWith("thm ")) { cfg.look_mode = cmd.substring(4).toInt() % 3; ui::look_request(); Serial.printf("thm %d\n", cfg.look_mode); }
     else if (cmd.startsWith("look ")) { cfg.saver_look = cmd.substring(5).toInt() % 2; Serial.printf("look %d\n", cfg.saver_look); }
     else if (cmd.startsWith("web ")) { cfg.web = cmd.substring(4).toInt(); web_enable(cfg.web); Serial.printf("web %d code %s\n", cfg.web, web_code()); }
     else if (cmd.startsWith("ap ")) { cfg.ap = cmd.substring(3).toInt(); ap_enable(cfg.ap); Serial.printf("ap %d\n", cfg.ap); }

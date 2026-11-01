@@ -119,11 +119,68 @@ static void tab_changed(lv_event_t *) {
   }
 }
 
+// Day / night look: Auto follows sunrise and sunset of today's forecast (07:00 / 19:00 without one).
+static bool want_day() {
+  if (cfg.look_mode == 1) return true;
+  if (cfg.look_mode == 2) return false;
+  struct tm t; time_t now = time(nullptr);
+  if (now < 1700000000) return false;
+  localtime_r(&now, &t);
+  int m = t.tm_hour * 60 + t.tm_min, rise = 7 * 60, set = 19 * 60;
+  { Lock l; if (S.wx.ok && S.wx.nd) { rise = atoi(S.wx.d_rise[0]) * 60 + atoi(S.wx.d_rise[0] + 3); set = atoi(S.wx.d_set[0]) * 60 + atoi(S.wx.d_set[0] + 3); } }
+  return m >= rise && m < set;
+}
+static void shell_style() {
+  lv_obj_t *scr = lv_screen_active();
+  lv_obj_set_style_bg_color(scr, C_BG, 0);
+  lv_obj_set_style_bg_color(lv_obj_get_parent(clock_l), C_BAR, 0);
+  lv_obj_set_style_text_color(clock_l, C_WHITE, 0);
+  lv_obj_set_style_text_color(date_l, C_DIM, 0);
+  lv_obj_set_style_text_color(i_demo, C_BG, 0);
+  lv_obj_set_style_bg_color(i_demo, C_AMBER, 0);
+  lv_obj_set_style_bg_color(tv, C_BG, 0);
+  lv_obj_t *bar = lv_tabview_get_tab_bar(tv);
+  lv_obj_set_style_bg_color(bar, C_BAR, 0);
+  for (uint32_t i = 0; i < lv_obj_get_child_count(bar); i++) {
+    lv_obj_t *b = lv_obj_get_child(bar, i);
+    lv_obj_set_style_text_color(b, C_FAINT, 0);
+    lv_obj_set_style_text_color(b, C_TEAL, LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(b, C_TEAL, LV_PART_MAIN | LV_STATE_CHECKED);
+  }
+}
+static bool look_pending = false;
+void look_request() { look_pending = true; }
+void look_check() {
+  look_pending = false;
+  if (!set_look(want_day())) return;
+  if (g_modal) close_modal();
+  shell_style();
+  if (cur == T_TOOLS) tools_leave();
+  lv_obj_clean(tabs[cur]);
+  build_page(cur);
+  switch (cur) {
+    case T_HOME: home_update(); break;
+    case T_POWER: power_update(true); break;
+    case T_CLIMATE: climate_update(true); break;
+    case T_BANK: bank_page_update(true); break;
+    case T_TOOLS: tools_update(true); break;
+  }
+  status_update();
+  lv_obj_invalidate(lv_screen_active());
+}
+
 static void tick(lv_timer_t *) {
   static uint32_t last_s = 0, last_home = 0;
   uint32_t now = millis();
   web_drain();
-  if (now - last_s >= 1000) { last_s = now; if (!saver_on()) status_update(); alarm_check(); }
+  if (look_pending) look_check();
+  if (now - last_s >= 1000) {
+    last_s = now;
+    static uint8_t n = 0;
+    if (++n >= 30) { n = 0; if (!saver_on()) look_check(); }       // twice a minute is plenty for sunset
+    if (!saver_on()) status_update();
+    alarm_check();
+  }
   if (saver_on()) return;
   if (g_modal) { sd_modal_update(); wifi_picker_update(); bank_settings_update(); level_modal_update(); place_picker_update(); return; }
   switch (cur) {
@@ -137,6 +194,7 @@ static void tick(lv_timer_t *) {
 }
 
 void begin() {
+  set_look(want_day());
   lv_obj_t *scr = lv_screen_active();
   lv_obj_set_style_bg_color(scr, C_BG, 0);
   status_build(scr);
@@ -170,6 +228,7 @@ void begin() {
     lv_obj_set_style_border_width(b, 3, LV_PART_MAIN | LV_STATE_CHECKED);
     lv_obj_set_style_border_color(b, C_TEAL, LV_PART_MAIN | LV_STATE_CHECKED);
   }
+  shell_style();
   saver_build();
   build_page(T_HOME);
   lv_obj_add_event_cb(tv, tab_changed, LV_EVENT_VALUE_CHANGED, nullptr);

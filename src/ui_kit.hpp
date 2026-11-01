@@ -8,23 +8,27 @@
 namespace ui {
 using namespace app;
 
-#define C_BG lv_color_hex(0x0A0F1A)
-#define C_BAR lv_color_hex(0x0F1624)
-#define C_CARD lv_color_hex(0x172133)
-#define C_CARD2 lv_color_hex(0x223049)
-#define C_LINE lv_color_hex(0x2C3B58)
-#define C_TEAL lv_color_hex(0x2BD9A8)
-#define C_BLUE lv_color_hex(0x5AA8FF)
-#define C_SKY lv_color_hex(0x8CCBFF)
-#define C_AMBER lv_color_hex(0xFFC54A)
-#define C_ORANGE lv_color_hex(0xFF8B45)
-#define C_PURPLE lv_color_hex(0xB085F5)
-#define C_WHITE lv_color_hex(0xEEF3FA)
-#define C_DIM lv_color_hex(0x7F91AE)
-#define C_FAINT lv_color_hex(0x4A5A78)
-#define C_GREEN lv_color_hex(0x42DD7E)
-#define C_RED lv_color_hex(0xF0524F)
-#define C_CLOUD lv_color_hex(0xD9E2EE)
+// colours come from the active palette (night or day look), see set_look()
+extern lv_color_t PAL[17];
+bool set_look(bool day);   // true when it changed
+bool look_day();
+#define C_BG ui::PAL[0]
+#define C_BAR ui::PAL[1]
+#define C_CARD ui::PAL[2]
+#define C_CARD2 ui::PAL[3]
+#define C_LINE ui::PAL[4]
+#define C_TEAL ui::PAL[5]
+#define C_BLUE ui::PAL[6]
+#define C_SKY ui::PAL[7]
+#define C_AMBER ui::PAL[8]
+#define C_ORANGE ui::PAL[9]
+#define C_PURPLE ui::PAL[10]
+#define C_WHITE ui::PAL[11]
+#define C_DIM ui::PAL[12]
+#define C_FAINT ui::PAL[13]
+#define C_GREEN ui::PAL[14]
+#define C_RED ui::PAL[15]
+#define C_CLOUD ui::PAL[16]
 
 extern const lv_font_t *F12, *F14, *F16, *F20, *F24, *F28, *F40;
 constexpr int W = 320, TOP = 22, TABS = 38, PAGE_H = 240 - TOP - TABS;   // 180 px per page
@@ -93,4 +97,5 @@ void power_view_test(int i);
 void bank_settings_test(int tap);
 void wifi_picker();
 void web_drain(); void sd_modal_update(); void tools_leave();
+void look_check(); void look_request();   // request = from an event handler: applied on the next tick
 }  // namespace ui

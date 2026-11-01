@@ -81,7 +81,7 @@ for(const l of rows){const c=l.split(',');h+=`<tr><td><b>${E(c[0].slice(5))}</b>
 return h+'</table><div class="dim" style="margin-top:8px"><a href="/f?n=trips.csv&dl=1">Download trips.csv</a></div></div>'}
 function settings(){const s=S.set;const al=[[0,'off'],...[1150,1180,1200,1220,1250,1280].map(v=>[v,'below '+(v/100).toFixed(2)+' V'])];
 const rows=[['Brightness',sel('bright',s.bright,[[0,'Auto'],[1,'Low'],[2,'Medium'],[3,'High']])],['Alarm sound',sel('beep',+s.beep,[[1,'on'],[0,'off']])],
-['Screensaver',sel('saver',s.saver,[[0,'off'],[1,'after 1 min'],[2,'after 2 min'],[3,'after 5 min'],[4,'after 10 min'],[5,'after 30 min']])],['Screensaver look',sel('look',s.look,[[0,'camper'],[1,'my photos']])],
+['Screensaver',sel('saver',s.saver,[[0,'off'],[1,'after 1 min'],[2,'after 2 min'],[3,'after 5 min'],[4,'after 10 min'],[5,'after 30 min']])],['Day / night look',sel('thm',s.thm,[[0,'automatic (sun)'],[1,'always day'],[2,'always night']])],['Screensaver look',sel('look',s.look,[[0,'camper'],[1,'my photos']])],
 ['Screen off',sel('scroff',s.scroff,[[0,'never'],[1,'15 min later'],[2,'30 min later'],[3,'60 min later'],[4,'120 min later']])],
 ['Battery type',sel('batt',s.batt,[[0,'AGM / lead'],[1,'Gel'],[2,'LiFePO4']])],['Low battery alarm',sel('alarm',s.alarm,al)],
 ['Wheelbase (cm)',`<input type="number" value="${s.wb}" min="250" max="500" onchange="post('/api/set',{k:'wb',v:this.value})">`],['Track (cm)',`<input type="number" value="${s.trk}" min="120" max="250" onchange="post('/api/set',{k:'trk',v:this.value})">`],

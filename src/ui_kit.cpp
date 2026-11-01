@@ -2,6 +2,21 @@
 
 namespace ui {
 
+// ---------------------------------------------------------------- night and day look
+static const uint32_t NIGHT[17] = {0x0A0F1A, 0x0F1624, 0x172133, 0x223049, 0x2C3B58, 0x2BD9A8, 0x5AA8FF, 0x8CCBFF, 0xFFC54A, 0xFF8B45, 0xB085F5, 0xEEF3FA, 0x7F91AE, 0x4A5A78, 0x42DD7E, 0xF0524F, 0xD9E2EE};
+static const uint32_t DAY[17] = {0xE6ECF3, 0xFFFFFF, 0xFFFFFF, 0xD5DEEA, 0xBFCADA, 0x0A9471, 0x1B66C9, 0x2479B8, 0xB87400, 0xCF5A12, 0x7448C2, 0x0E1626, 0x4E5D75, 0x8E9BB0, 0x178F49, 0xD2312E, 0x8D9BB0};   // darker accents: readable in sunlight on a light background
+lv_color_t PAL[17];
+static int8_t is_day = -1;
+bool look_day() { return is_day == 1; }
+bool set_look(bool day) {
+  if (is_day == (int8_t)day) return false;
+  is_day = day;
+  for (int i = 0; i < 17; i++) PAL[i] = lv_color_hex(day ? DAY[i] : NIGHT[i]);
+  lv_display_t *d = lv_display_get_default();
+  if (d) lv_display_set_theme(d, lv_theme_default_init(d, PAL[5], PAL[6], !day, LV_FONT_DEFAULT));
+  return true;
+}
+
 const lv_font_t *F12 = &lv_font_montserrat_12, *F14 = &lv_font_montserrat_14, *F16 = &lv_font_montserrat_16,
                 *F20 = &lv_font_montserrat_20, *F24 = &lv_font_montserrat_24, *F28 = &lv_font_montserrat_28,
                 *F40 = &lv_font_montserrat_40;

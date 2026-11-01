@@ -91,7 +91,7 @@ static void cseg_cb(lv_event_t *e) { list_i = (int)(intptr_t)lv_event_get_user_d
 
 // ---------------------------------------------------------------- settings rows
 static void open_upd();
-enum { S_PLACE, S_WIFI, S_WEB, S_PASS, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_INFO, S_N };
+enum { S_PLACE, S_WIFI, S_WEB, S_PASS, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_THEME, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_INFO, S_N };
 static void open_sd(); static void open_web();
 static const int16_t ALARMS[] = {0, 1150, 1180, 1200, 1220, 1250, 1280};
 static void set_tap(int k) {
@@ -105,6 +105,7 @@ static void set_tap(int k) {
     case S_BEEP: cfg.beep = !cfg.beep; save_settings(); if (cfg.beep) beep(1); break;
     case S_BRIGHT: cfg.bright = (cfg.bright + 1) % 4; save_settings(); break;
     case S_SAVER: cfg.saver = (cfg.saver + 1) % 6; save_settings(); break;
+    case S_THEME: cfg.look_mode = (cfg.look_mode + 1) % 3; save_settings(); look_request(); break;
     case S_LOOK: {
       cfg.saver_look ^= 1; save_settings();
       if (cfg.saver_look) { int n = photos_count(); char m[72];
@@ -271,6 +272,7 @@ void web_drain() {
       else if (!strcmp(k, "saver")) cfg.saver = clampi(v, 0, 5);
       else if (!strcmp(k, "scroff")) cfg.scr_off = clampi(v, 0, 4);
       else if (!strcmp(k, "look")) cfg.saver_look = clampi(v, 0, 1);
+      else if (!strcmp(k, "thm")) { cfg.look_mode = clampi(v, 0, 2); look_request(); }
       else if (!strcmp(k, "wb")) cfg.len_cm = clampi(v, 250, 500);
       else if (!strcmp(k, "trk")) cfg.width_cm = clampi(v, 120, 250);
       else if (!strcmp(k, "rot")) cfg.lvl_rot = clampi(v, 0, 3);
@@ -415,6 +417,8 @@ void tools_update(bool force) {
   if (SAVER_MIN[cfg.saver]) snprintf(b, sizeof b, "after %d min", SAVER_MIN[cfg.saver]); else strcpy(b, "off");
   set_row(S_SAVER, LV_SYMBOL_IMAGE "  Screensaver", b, SAVER_MIN[cfg.saver] ? C_AMBER : C_DIM);
   if (OFF_MIN[cfg.scr_off]) snprintf(b, sizeof b, "%d min later", OFF_MIN[cfg.scr_off]); else strcpy(b, "never");
+  { static const char *TM[] = {"auto", "day", "night"}; char b[24]; snprintf(b, sizeof b, "%s (%s now)", TM[cfg.look_mode], look_day() ? "day" : "night");
+    set_row(S_THEME, LV_SYMBOL_IMAGE "  Day / night look", b, C_DIM); }
   set_row(S_LOOK, LV_SYMBOL_IMAGE "  Screensaver look", cfg.saver_look ? "my photos" : "camper", cfg.saver_look ? C_TEAL : C_DIM);
   set_row(S_SCROFF, LV_SYMBOL_POWER "  Screen off", b);
   snprintf(b, sizeof b, "%.2f m", cfg.len_cm / 100.0f); set_row(S_LEN, LV_SYMBOL_GPS "  Wheelbase", b);

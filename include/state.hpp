@@ -145,6 +145,7 @@ struct Settings {
   uint16_t len_cm = 404, width_cm = 180;   // WHEELBASE and TRACK (Fiat Ducato maxi: 4035 / ~1800 mm)
   uint8_t lvl_rot = 0;
   uint8_t saver = 3, scr_off = 2;          // index into SAVER_MIN / OFF_MIN
+  uint8_t look_mode = 0;                   // screen look: 0 auto (day by sun), 1 always day, 2 always night
   uint8_t saver_look = 0;                  // 0 camper scene, 1 photos from the SD card
   bool web = false, ap = false;            // phone page; the board's own WiFi "CamperHub"
 };
