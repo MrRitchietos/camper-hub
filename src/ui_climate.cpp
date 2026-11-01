@@ -84,9 +84,10 @@ static void fc_show(int view) {
     f_tchart = mk_chart(f_body, 0, 50, LV_CHART_TYPE_LINE, C_ORANGE, &f_tser);
     f_rchart = mk_chart(f_body, 52, 22, LV_CHART_TYPE_BAR, C_BLUE, &f_rser);
     lv_chart_set_range(f_rchart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+    lv_obj_set_style_pad_top(f_tchart, 17, 0);                 // room for the caption: the line stays below it
     f_tlab = label(f_tchart, F12, C_DIM, "");
     lv_obj_add_flag(f_tlab, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_align(f_tlab, LV_ALIGN_TOP_LEFT, 2, -2);
+    lv_obj_align(f_tlab, LV_ALIGN_TOP_LEFT, 2, -16);
     int mn = 999, mx = -999;
     for (int i = 0; i < fw.nh; i++) { mn = min(mn, fw.h[i].t10 / 10 - 1); mx = max(mx, fw.h[i].t10 / 10 + 1); }
     if (mn > mx) { mn = 0; mx = 20; }

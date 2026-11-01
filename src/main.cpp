@@ -38,9 +38,11 @@ static bool dimmed = false, dark = false;
 static volatile bool want_wake = false;
 static constexpr uint32_t DIM_AFTER = 5 * 60 * 1000;
 
+static bool shot_mode = false;                         // "shot": exact frame as LVGL draws it, sent over serial
 static void flush(lv_display_t *d, const lv_area_t *a, uint8_t *px) {
   if (photo_mode) { lv_display_flush_ready(d); return; }
   uint32_t w = lv_area_get_width(a), h = lv_area_get_height(a);
+  if (shot_mode) { Serial.printf("AREA %d %d %u %u\n", (int)a->x1, (int)a->y1, (unsigned)w, (unsigned)h); Serial.write(px, w * h * 2); feedLoopWDT(); }
   lv_draw_sw_rgb565_swap(px, w * h);
   if (tft.getStartCount() == 0) tft.startWrite();
   tft.pushImageDMA(a->x1, a->y1, w, h, (lgfx::swap565_t *)px);   // LVGL waits for it (flush_wait) before reusing the buffer
@@ -132,12 +134,12 @@ static void console() {
     else if (cmd == "backup") sd_job(J_BACKUP);
     else if (cmd == "ip") { Serial.printf("ip %s ap %s\n", WiFi.localIP().toString().c_str(), WiFi.softAPIP().toString().c_str()); }
     else if (cmd == "wake") app::screen_wake();
-    else if (cmd == "shot") {          // raw RGB565 frame over serial (for checking the look)
+    else if (cmd == "shot") {          // exact RGB565 frame over serial, in the pieces LVGL draws
+      Serial.printf("SHOT %d %d\n", W, H);
+      shot_mode = true;
+      lv_obj_invalidate(lv_screen_active()); lv_obj_invalidate(lv_layer_top());
       lv_refr_now(nullptr);
-      if (tft.getStartCount()) { tft.waitDMA(); tft.endWrite(); }
-      static uint16_t line[320];
-      Serial.printf("SHOT %d %d\n", tft.width(), tft.height());
-      for (int y = 0; y < tft.height(); y++) { tft.readRect(0, y, tft.width(), 1, line); Serial.write((uint8_t *)line, tft.width() * 2); feedLoopWDT(); }
+      shot_mode = false;
       Serial.println("\nEND");
     }
     else if (cmd.startsWith("pv ")) ui::power_view_test(cmd.substring(3).toInt());
