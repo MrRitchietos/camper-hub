@@ -64,7 +64,11 @@ void ota_check() {
   h.addHeader("Accept", "application/vnd.github+json");
   h.setUserAgent("camper-hub/" FW_VERSION);
   int code = h.GET();
-  if (code != 200) { char b[48]; snprintf(b, sizeof b, "GitHub answered %d", code); msg(b); h.end(); return; }
+  if (code != 200) {
+    char e[100] = ""; c.lastError(e, sizeof e);
+    Serial.printf("update: GitHub %d, tls: %s, heap %u\n", code, e, (unsigned)ESP.getFreeHeap());
+    char b[48]; snprintf(b, sizeof b, code < 0 ? "no connection to GitHub" : "GitHub answered %d", code); msg(b); h.end(); return;
+  }
   JsonDocument f, d;
   f["tag_name"] = true; f["draft"] = true; f["prerelease"] = true;
   f["assets"][0]["name"] = true; f["assets"][0]["browser_download_url"] = true; f["assets"][0]["size"] = true;

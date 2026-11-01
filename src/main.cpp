@@ -185,7 +185,14 @@ void setup() {
   web_enable(cfg.web);
   ap_enable(cfg.ap);
   radio_begin();
-  delay(3000);
+  {                                                    // the update check at start needs the RAM the screen takes later
+    tft.setTextColor(0x8C71, 0x0000); tft.setFont(&fonts::Font2); tft.setTextDatum(lgfx::middle_center);
+    tft.drawString("Camper hub " FW_VERSION, 160, 110); tft.drawString("starting...", 160, 130);
+    uint32_t t0 = millis();
+    while (!app::ota_done && millis() - t0 < 45000) delay(50);
+    tft.setTextDatum(lgfx::top_left);
+  }
+  delay(500);
   Serial.printf("heap after radio %u\n", (unsigned)ESP.getFreeHeap());
   logger_begin();
   web_start_task();

@@ -35,7 +35,7 @@ bool store_auto_restore();
 void web_start_task();
 void sd_restart();
 void ota_check(); void ota_boot_guard(); void ota_boot_ok();
-extern char ota_msg[48];                                  // unmount the card, then restart
+extern char ota_msg[48]; extern volatile bool ota_done;                                  // unmount the card, then restart
 // time helpers
 bool clock_now(struct tm &t);                      // false until NTP or the SD-restored clock set it
 void fmt_date(char *out, size_t n, const struct tm &t);   // YYYY-MM-DD

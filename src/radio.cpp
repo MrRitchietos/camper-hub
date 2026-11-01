@@ -25,6 +25,7 @@ static char new_ssid[33], new_pass[65];
 static Preferences prefs;
 
 void request_wifi_scan() { want_scan = true; }
+volatile bool ota_done = false;
 volatile bool ble_off = false; static volatile bool want_ble_off = false;
 bool ble_stop() {                                    // firmware upload: Bluetooth off frees ~30 KB (restart after)
   want_ble_off = true;
@@ -199,7 +200,8 @@ static void task(void *) {
   join_best_known();
   update_link();
   { char tz[48]; strlcpy(tz, getenv("TZ") ? getenv("TZ") : "CET-1CEST,M3.5.0,M10.5.0/3", sizeof tz); configTzTime(tz, "pool.ntp.org", "time.google.com"); }
-  ota_check();                                        // before Bluetooth: TLS needs the RAM
+  ota_check();                                        // before Bluetooth and the screen: TLS needs the RAM
+  ota_done = true;
   ble_begin();
 
   uint32_t last_link = 0, last_tick = 0, last_wx = 0, lost_at = 0;
