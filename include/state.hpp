@@ -147,7 +147,6 @@ struct Settings {
   uint8_t saver = 3, scr_off = 2;          // index into SAVER_MIN / OFF_MIN
   uint8_t saver_look = 0;                  // 0 camper scene, 1 photos from the SD card
   bool web = false, ap = false;            // phone page; the board's own WiFi "CamperHub"
-  bool auto_update = true;                 // new versions from GitHub (checked at start + one night restart every 3 days)
 };
 constexpr uint8_t SAVER_MIN[] = {0, 1, 2, 5, 10, 30};     // 0 = no screensaver (just dim after 5 min)
 constexpr uint8_t OFF_MIN[] = {0, 15, 30, 60, 120};       // screen fully dark this long after the saver (0 = never)

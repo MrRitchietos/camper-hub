@@ -141,7 +141,7 @@ static void api_state() {
     JsonObject st = d["set"].to<JsonObject>();
     st["bright"] = cfg.bright; st["beep"] = cfg.beep; st["saver"] = cfg.saver; st["scroff"] = cfg.scr_off; st["look"] = cfg.saver_look;
     st["wb"] = cfg.len_cm; st["trk"] = cfg.width_cm; st["rot"] = cfg.lvl_rot; st["batt"] = v.batt; st["alarm"] = v.alarm_cv;
-    st["ap"] = cfg.ap; st["demo"] = demo_on; st["aupd"] = cfg.auto_update; d["ver"] = FW_VERSION; d["upd"] = ota_msg;
+    st["ap"] = cfg.ap; st["demo"] = demo_on; d["ver"] = FW_VERSION; d["upd"] = ota_msg;
     JsonObject pl = d["place"].to<JsonObject>();
     pl["pinned"] = P.pinned; pl["name"] = P.pinned ? P.cur.name : "auto"; pl["busy"] = P.searching; pl["err"] = P.err;
     JsonArray ph = pl["hits"].to<JsonArray>();
@@ -243,7 +243,7 @@ static void routes() {
     ok();
   });
   srv->on("/api/job", HTTP_POST, [] { if (!auth()) return; String j = arg("j");
-    if (j == "check") { ok(); delay(500); sd_restart(); return; } sd_job(j == "backup" ? J_BACKUP : j == "restore" ? J_RESTORE : j == "update" ? J_UPDATE : J_NONE); ok(); });
+    if (j == "check") { ok(); delay(500); ota_request(); return; } sd_job(j == "backup" ? J_BACKUP : j == "restore" ? J_RESTORE : j == "update" ? J_UPDATE : J_NONE); ok(); });
   srv->on("/api/del", HTTP_POST, [] {
     if (!auth()) return;
     String n = arg("n");

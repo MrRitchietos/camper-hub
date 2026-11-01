@@ -3,7 +3,7 @@
 #include <WiFi.h>
 #include "ui_kit.hpp"
 
-namespace app { extern char ota_msg[48]; }
+namespace app { extern char ota_msg[48]; void ota_request(); }
 namespace ui {
 
 static Seg seg;
@@ -90,6 +90,7 @@ static void add_done(const char *s) {
 static void cseg_cb(lv_event_t *e) { list_i = (int)(intptr_t)lv_event_get_user_data(e); seg_set(cseg, list_i); dirty = true; }
 
 // ---------------------------------------------------------------- settings rows
+static void open_upd();
 enum { S_PLACE, S_WIFI, S_WEB, S_PASS, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_INFO, S_N };
 static void open_sd(); static void open_web();
 static const int16_t ALARMS[] = {0, 1150, 1180, 1200, 1220, 1250, 1280};
@@ -126,7 +127,7 @@ static void set_tap(int k) {
     case S_AP: cfg.ap = !cfg.ap; if (cfg.ap && !cfg.web) { cfg.web = true; web_enable(true); } save_settings(); ap_enable(cfg.ap);
                if (cfg.ap) open_web(); else toast("Own WiFi off"); break;
     case S_SD: open_sd(); break;
-    case S_UPD: cfg.auto_update = !cfg.auto_update; save_settings(); toast(cfg.auto_update ? "Updates from GitHub: on (checked at start)" : "Automatic updates off"); break;
+    case S_UPD: open_upd(); break;
     case S_SCROFF: cfg.scr_off = (cfg.scr_off + 1) % 5; save_settings(); break;
     case S_LEN: cfg.len_cm = cfg.len_cm >= 450 ? 300 : cfg.len_cm + 5; save_settings(); break;
     case S_WIDTH: cfg.width_cm = cfg.width_cm >= 200 ? 150 : cfg.width_cm + 5; save_settings(); break;
@@ -198,6 +199,18 @@ static void open_web() {
   }), 10, 200);
   lv_obj_set_pos(button(m, "OK", 100, 32, C_TEAL, [](lv_event_t *) { close_modal(); }), 210, 200);
 }
+static void open_upd() {
+  lv_obj_t *m = modal(LV_SYMBOL_DOWNLOAD "  Update");
+  char b[160];
+  snprintf(b, sizeof b, "This is version %s.%s%s\n\nThe board restarts, looks on GitHub for a new version and installs it. "
+           "That takes about 1 to 3 minutes. Settings and logs stay.", FW_VERSION, ota_msg[0] ? "\nLast check: " : "", ota_msg);
+  lv_obj_t *l = label(m, F14, C_WHITE, b);
+  lv_obj_set_width(l, 304);
+  lv_label_set_long_mode(l, LV_LABEL_LONG_WRAP);
+  lv_obj_set_pos(l, 10, 40);
+  lv_obj_set_pos(button(m, "Cancel", 100, 32, C_CARD2, [](lv_event_t *) { close_modal(); }), 10, 200);
+  lv_obj_set_pos(button(m, "Check and install", 190, 32, C_TEAL, [](lv_event_t *) { close_modal(); ota_request(); }), 120, 200);
+}
 static uint32_t sdv = UINT32_MAX;
 void sd_modal_update() {
   if (g_modal && g_modal == web_modal) { static uint32_t t = 0; if (millis() - t > 2000) { t = millis(); web_text(); } return; }
@@ -265,7 +278,6 @@ void web_drain() {
       else if (!strcmp(k, "alarm")) vic_settings(b, v == 0 ? 0 : clampi(v, 1000, 1400));
       else if (!strcmp(k, "demo")) { if ((bool)v != demo_on) set_demo(v); }
       else if (!strcmp(k, "ap")) { cfg.ap = v; ap_enable(cfg.ap); }
-      else if (!strcmp(k, "aupd")) cfg.auto_update = v;
       else if (!strcmp(k, "zero")) level_zero();
       else if (!strcmp(k, "tag")) level_next_tag();
       save_settings();
@@ -411,7 +423,7 @@ void tools_update(bool force) {
   set_row(S_ROT, LV_SYMBOL_LOOP "  Level tag turned", ROT[cfg.lvl_rot % 4]);
   set_row(S_DEMO, LV_SYMBOL_PLAY "  Demo mode", demo_on ? "on" : "off", demo_on ? C_AMBER : C_DIM);
   set_row(S_SD, LV_SYMBOL_SD_CARD "  SD card", S.sd_ok ? S.sd_msg : "no card", S.sd_ok ? C_DIM : C_RED);
-  set_row(S_UPD, LV_SYMBOL_DOWNLOAD "  Auto update", cfg.auto_update ? (ota_msg[0] ? ota_msg : "on") : "off", cfg.auto_update ? C_TEAL : C_DIM);
+  set_row(S_UPD, LV_SYMBOL_DOWNLOAD "  Update", ota_msg[0] ? ota_msg : "check now", C_DIM);
   snprintf(b, sizeof b, "%u KB free", (unsigned)(ESP.getFreeHeap() / 1024));
   set_row(S_INFO, LV_SYMBOL_SETTINGS "  Camper hub " FW_VERSION, b, C_DIM);
   drawlist_count(set_dl, S_N);

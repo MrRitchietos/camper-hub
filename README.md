@@ -20,7 +20,7 @@ Everything is saved in the folder `camper`: a log line per minute, the trip diar
 
 ## Updates
 
-The board looks for a new release in this repository when it starts and installs `firmware.bin` by itself. A version that does not start is rolled back. It can also be installed from the phone page or from `camper/update.bin` on the SD card.
+Tap Tools > Settings > Update (or "Check now" on the phone page): the board restarts, looks for a new release in this repository and installs `firmware.bin`. A version that does not start is rolled back. It can also be installed from the phone page or from `camper/update.bin` on the SD card.
 
 ## Building
 

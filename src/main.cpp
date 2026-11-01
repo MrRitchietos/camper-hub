@@ -15,14 +15,14 @@ void save_settings() {
   sp.putUChar("bright", cfg.bright); sp.putBool("beep", cfg.beep);
   sp.putUShort("wb", cfg.len_cm); sp.putUShort("trk", cfg.width_cm); sp.putUChar("rot", cfg.lvl_rot);
   sp.putUChar("saver", cfg.saver); sp.putUChar("scroff", cfg.scr_off);
-  sp.putUChar("look", cfg.saver_look); sp.putBool("web", cfg.web); sp.putBool("ap", cfg.ap); sp.putBool("aupd", cfg.auto_update);
+  sp.putUChar("look", cfg.saver_look); sp.putBool("web", cfg.web); sp.putBool("ap", cfg.ap);
 }
 static void load_settings() {
   sp.begin("camper", false);
   cfg.bright = sp.getUChar("bright", 0); cfg.beep = sp.getBool("beep", true);
   cfg.len_cm = sp.getUShort("wb", 404); cfg.width_cm = sp.getUShort("trk", 180); cfg.lvl_rot = sp.getUChar("rot", 0);
   cfg.saver = sp.getUChar("saver", 3) % 6; cfg.scr_off = sp.getUChar("scroff", 2) % 5;
-  cfg.saver_look = sp.getUChar("look", 0) % 2; cfg.web = sp.getBool("web", false); cfg.ap = sp.getBool("ap", false); cfg.auto_update = sp.getBool("aupd", true);
+  cfg.saver_look = sp.getUChar("look", 0) % 2; cfg.web = sp.getBool("web", false); cfg.ap = sp.getBool("ap", false);
 }
 }  // namespace app
 using namespace app;
@@ -188,9 +188,10 @@ void setup() {
   radio_begin();
   {                                                    // the update check at start needs the RAM the screen takes later
     tft.setTextColor(0x8C71, 0x0000); tft.setFont(&fonts::Font2); tft.setTextDatum(lgfx::middle_center);
-    tft.drawString("Camper hub " FW_VERSION, 160, 110); tft.drawString("starting...", 160, 130);
+    bool upd = app::ota_wanted();
+    tft.drawString("Camper hub " FW_VERSION, 160, 110); tft.drawString(upd ? "looking for an update, please wait..." : "starting...", 160, 130);
     uint32_t t0 = millis();
-    while (!app::ota_done && millis() - t0 < 45000) delay(50);
+    while (!app::ota_done && millis() - t0 < (upd ? 300000UL : 20000UL)) delay(50);
     tft.setTextDatum(lgfx::top_left);
   }
   delay(500);
@@ -230,9 +231,6 @@ void loop() {
   }
   static bool boot_ok = false;
   if (!boot_ok && millis() > 180000) { boot_ok = true; ota_boot_ok(); }
-  if (cfg.auto_update && millis() > 3 * 86400000UL && dimmed && !ui::alarm_active()) {   // look for updates once in 3 nights
-    struct tm t; if (clock_now(t) && t.tm_hour == 3 && t.tm_min >= 30 && t.tm_min < 40) { log_event("night restart (update check)"); sd_restart(); }
-  }
   if (photo_mode && !dark) app::photos_tick();
   else if (sv && !photo_mode && !dark && millis() - ls > 2000) { ls = millis(); ui::saver_tick(); }
   static uint32_t lb = 0, la = 0;
