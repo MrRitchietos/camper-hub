@@ -73,16 +73,6 @@ void level_build(lv_obj_t *t) {
   lv_obj_set_pos(mx, 12, 54);
 }
 
-static lv_obj_t *lvl_modal = nullptr;
-void open_level() {
-  lv_obj_t *m = modal(LV_SYMBOL_GPS "  Level");
-  lvl_modal = m;
-  lv_obj_t *b = box(m, 320, 180, C_BG);
-  lv_obj_set_pos(b, 0, 32);
-  level_build(b);
-  level_update();
-}
-void level_modal_update() { if (g_modal && g_modal == lvl_modal) { level_poll(); level_update(); } }
 
 void level_update() {
   float p, r; bool present;

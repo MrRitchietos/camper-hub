@@ -25,9 +25,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:6px 4px;bord
 <header><h1>Camper hub <small id="clk"></small></h1><nav id="nav"></nav></header><main id="main"></main><div id="toast"></div>
 <script>
 const TABS=['Live','Bank','Weather','Level','Lists','Trips','Settings','Files'];let tab=localStorage.tab||'Live',S=null,L=null,busy=false;
-const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2200)}
-async function post(u,p){const r=await fetch(u,{method:'POST',body:new URLSearchParams(p)});if(!r.ok)toast('Failed: '+await r.text());setTimeout(load,400);return r.ok}
+async function post(u,p){const r=await fetch(u,{method:'POST',headers:{'X-Camper':'1'},body:new URLSearchParams(p)});if(!r.ok)toast('Failed: '+await r.text());setTimeout(load,400);return r.ok}
 const WX=c=>c==0?'Clear':c<=2?'Partly cloudy':c==3?'Cloudy':c<50?'Fog':c<60?'Drizzle':c<70?'Rain':c<80?'Snow':c<83?'Showers':c<90?'Snow showers':'Thunderstorm';
 const n=(v,d=1,u='')=>v==null?'--':(+v).toFixed(d)+u;
 function nav(){$('#nav').innerHTML=TABS.map(t=>`<button class="${t==tab?'on':''}" onclick="go('${t}')">${t}</button>`).join('')}
@@ -102,9 +102,9 @@ async function shrink(file){const bmp=await createImageBitmap(file,{imageOrienta
 const port=bmp.height>bmp.width;x.fillStyle='#000';x.fillRect(0,0,320,240);const z=port?Math.min(320/bmp.width,240/bmp.height):Math.max(320/bmp.width,240/bmp.height);const w=bmp.width*z,h=bmp.height*z;x.drawImage(bmp,(320-w)/2,(240-h)/2,w,h);
 return new Promise(r=>c.toBlob(r,'image/jpeg',0.88))}
 async function sendPhotos(){const fs=[...$('#ph').files];let i=0;for(const f of fs){i++;$('#php').textContent=`Sending ${i}/${fs.length}...`;const b=await shrink(f);const fd=new FormData();
-fd.append('f',b,'p'+Date.now().toString(36)+i+'.jpg');const r=await fetch('/upload?d=photos',{method:'POST',body:fd});if(!r.ok){$('#php').textContent='Failed: '+await r.text();return}}$('#php').textContent='Done: '+fs.length+' photos';setTimeout(()=>render(true),300)}
+fd.append('f',b,'p'+Date.now().toString(36)+i+'.jpg');const r=await fetch('/upload?d=photos',{method:'POST',headers:{'X-Camper':'1'},body:fd});if(!r.ok){$('#php').textContent='Failed: '+await r.text();return}}$('#php').textContent='Done: '+fs.length+' photos';setTimeout(()=>render(true),300)}
 function sendFw(){const f=$('#fw').files[0];if(!f)return;if(!confirm('Install '+f.name+'? The board restarts.'))return;const x=new XMLHttpRequest(),fd=new FormData();fd.append('fw',f,f.name);
-x.upload.onprogress=e=>$('#fwp').textContent='Sending '+Math.round(e.loaded*100/e.total)+'%';x.onload=()=>$('#fwp').textContent=x.status==200?'Installed, the board restarts...':'Failed: '+x.responseText;x.open('POST','/update');x.send(fd)}
+x.upload.onprogress=e=>$('#fwp').textContent='Sending '+Math.round(e.loaded*100/e.total)+'%';x.onload=()=>$('#fwp').textContent=x.status==200?'Installed, the board restarts...':'Failed: '+x.responseText;x.open('POST','/update');x.setRequestHeader('X-Camper','1');x.send(fd)}
 let last='',shown='';async function render(force){if(!S)return;const m=$('#main');if(shown!=tab){force=true;shown=tab}
 if(['Lists','Trips','Files','Settings'].includes(tab)){if(!force)return;
 const fn={Lists:lists,Trips:trips,Files:files,Settings:async()=>settings()}[tab];m.innerHTML=await fn(true);return}

@@ -182,7 +182,7 @@ static void tick(lv_timer_t *) {
     alarm_check();
   }
   if (saver_on()) return;
-  if (g_modal) { sd_modal_update(); wifi_picker_update(); bank_settings_update(); level_modal_update(); place_picker_update(); return; }
+  if (g_modal) { sd_modal_update(); wifi_picker_update(); bank_settings_update(); place_picker_update(); return; }
   switch (cur) {
     case T_HOME: if (now - last_home >= 500) { last_home = now; home_update(); } break;
     case T_POWER: power_update(false); break;

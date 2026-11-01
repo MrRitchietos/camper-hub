@@ -38,9 +38,12 @@ bool ble_stop() {                                    // firmware upload: Bluetoo
   for (int i = 0; i < 150 && !ble_off; i++) delay(20);
   return ble_off;
 }
-static volatile bool ap_want = false; static bool ap_is = false;
+static volatile bool ap_want = false, ap_redo = false; static bool ap_is = false;
 void ap_enable(bool on) { ap_want = on; }
+void ap_new_pass() { ap_redo = true; }               // the phone password changed: the own WiFi uses it too
 static void ap_service() {                           // the board's own WiFi for the phone page (follows the camp WiFi channel)
+  if (ap_redo && ap_is && ap_want) { ap_redo = false; WiFi.softAP("CamperHub", web_code(), 1, 0, 2); log_event("own WiFi: new password"); }
+  ap_redo = false;
   if (ap_want == ap_is) return;
   ap_is = ap_want;
   if (ap_is) { WiFi.mode(WIFI_AP_STA); WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
@@ -227,9 +230,14 @@ static void task(void *) {
       NimBLEDevice::getScan()->stop(); NimBLEDevice::deinit(true); ble_off = true;
       Serial.printf("bluetooth off for the update, heap %u big %u\n", (unsigned)ESP.getFreeHeap(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
-    bool want_pause = ble_pause_until && (int32_t)(ble_pause_until - millis()) > 0;
+    // low memory brake: the scan allocates for every advert it hears, so it rests until memory is back
+    static bool low_mem = false;
+    { uint32_t f = ESP.getFreeHeap(), b = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+      if (!low_mem && (f < 15000 || b < 6000)) { low_mem = true; Serial.printf("low memory (%u / %u): scan rests\n", (unsigned)f, (unsigned)b); }
+      else if (low_mem && f > 22000 && b > 10000) low_mem = false; }
+    bool want_pause = low_mem || (ble_pause_until && (int32_t)(ble_pause_until - millis()) > 0);
     if (!ble_off && want_pause && !ble_paused) { ble_paused = true; NimBLEDevice::getScan()->stop(); }
-    if (!ble_off && !want_pause && ble_paused) { ble_paused = false; ble_pause_until = 0; ble_cb.restart = true; }
+    if (!ble_off && !want_pause && ble_paused) { ble_paused = false; if (!low_mem) ble_pause_until = 0; ble_cb.restart = true; }
     if (!ble_off && !ble_paused && ble_cb.restart) { ble_cb.restart = false; NimBLEDevice::getScan()->start(0, false, true); }
     if (now - last_tick >= 1000) { last_tick = now; vic_tick(); sens_tick(); }
     if (!ble_off) bank_service();

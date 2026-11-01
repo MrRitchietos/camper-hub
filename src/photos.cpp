@@ -67,7 +67,7 @@ static bool jpeg_info(const char *path, JInfo &j) {
       uint8_t b[512]; int n = f.read(b, min(len - 2, (int)sizeof b));
       if (n > 14 && !memcmp(b, "Exif\0\0", 6)) {
         const uint8_t *t = b + 6; bool le = t[0] == 'I';
-        auto g16 = [&](int o) { return o + 1 < n - 6 ? (le ? t[o] | t[o + 1] << 8 : t[o] << 8 | t[o + 1]) : 0; };
+        auto g16 = [&](int o) { return o >= 0 && o + 1 < n - 6 ? (le ? t[o] | t[o + 1] << 8 : t[o] << 8 | t[o + 1]) : 0; };
         auto g32 = [&](int o) { return (uint32_t)g16(le ? o : o + 2) | (uint32_t)g16(le ? o + 2 : o) << 16; };
         int ifd = g32(4), cnt = g16(ifd);
         for (int i = 0; i < cnt && i < 40; i++) { int e = ifd + 2 + i * 12; if (g16(e) == 0x0112) { j.orient = g16(e + 8); break; } }
@@ -102,6 +102,14 @@ static void save_cache(const char *cpath) {
   static uint16_t line[320 * 4];
   for (int y = 0; y < 240; y += 4) { t.readRect(0, y, 320, 4, (lgfx::swap565_t *)line); c.write((uint8_t *)line, sizeof line); }
   c.close();
+}
+
+void photos_drop_cache(const char *path) {            // a photo is deleted: its ready frame goes too
+  File f = SD.open(path);
+  if (!f) return;
+  uint32_t size = f.size(); f.close();
+  char cpath[48]; snprintf(cpath, sizeof cpath, "%s/%08x.raw", CACHE, (unsigned)name_hash(path, size));
+  SD.remove(cpath);
 }
 
 static bool show(int k) {

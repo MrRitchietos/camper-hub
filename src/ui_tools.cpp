@@ -9,7 +9,7 @@ namespace ui {
 static Seg seg;
 static lv_obj_t *v_check, *v_set, *c_prog, *c_bar, *c_fill;
 static Seg cseg;
-static Pool items;
+static lv_obj_t *items_dl, *items_empty;   // checklist: one drawn list
 static lv_obj_t *set_dl;
 struct SetRow { char title[40], val[40]; lv_color_t c; };
 static SetRow srow[32];
@@ -51,8 +51,8 @@ static void load_lists() {
     }
   }
 }
-static void item_tap(lv_event_t *e) {
-  int i = (int)(intptr_t)lv_event_get_user_data(e);
+static void item_tap(int i) {
+  if (i < 0 || i >= (int)L[list_i].size() || i >= 32) return;
   done_mask[list_i] ^= 1u << i;
   cp.putULong(list_i ? "m1" : "m0", done_mask[list_i]);
   dirty = true;
@@ -60,9 +60,9 @@ static void item_tap(lv_event_t *e) {
   if (n && done_mask[list_i] == (n >= 32 ? 0xFFFFFFFF : (1u << n) - 1)) { toast(list_i ? "All set, enjoy!" : "All done, drive safe!"); beep(1); }
 }
 static int del_i = -1;
-static void item_hold(lv_event_t *e) {
-  del_i = (int)(intptr_t)lv_event_get_user_data(e);
-  if (del_i >= (int)L[list_i].size()) return;
+static void item_hold(int i) {
+  del_i = i;
+  if (del_i < 0 || del_i >= (int)L[list_i].size()) return;
   lv_obj_t *m = modal(LV_SYMBOL_TRASH "  Delete item?");
   lv_obj_t *t = label(m, F16, C_WHITE, L[list_i][del_i].c_str());
   lv_obj_set_width(t, 300);
@@ -121,7 +121,7 @@ static void set_tap(int k) {
       open_text(LV_SYMBOL_EDIT "  Phone page password", "8 to 32 characters", 32, nullptr, [](const char *p) {
         if (!p[0]) return;
         if (!web_set_pass(p)) { toast("Use 8 to 32 letters or numbers"); return; }
-        if (cfg.ap) { ap_enable(false); delay(300); ap_enable(true); }
+        ap_new_pass();
         toast("Password saved");
       });
       break;
@@ -143,7 +143,7 @@ static void set_tap(int k) {
 static void tools_view(int i) {
   seg_set(seg, i); show(v_check, i == 0); show(v_trip, i == 1); show(v_set, i == 2); dirty = true;
   trips_request(i == 1);                       // the diary only sits in RAM while it is shown
-  if (i != 1) { std::vector<TripDay>().swap(tcopy); tver = UINT32_MAX; }
+  if (i != 1) { std::vector<TripDay>().swap(tcopy); tver = UINT32_MAX; if (trip_dl) drawlist_count(trip_dl, 0); }
 }
 void tools_view_test(int i) { if (v_check && lv_obj_is_valid(v_check)) tools_view(i); }
 void tools_leave() { trips_request(false); std::vector<TripDay>().swap(tcopy); tver = UINT32_MAX; }
@@ -151,6 +151,7 @@ void tools_leave() { trips_request(false); std::vector<TripDay>().swap(tcopy); t
 // ---------------------------------------------------------------- trip diary rows
 lv_color_t temp_color(float t);
 static void trip_row(lv_layer_t *L, const lv_area_t &r, int i) {
+  if (i < 0 || i >= (int)tcopy.size()) return;
   const TripDay &d = tcopy[i];
   static const char *WD[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
   static const char *MO[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -184,7 +185,7 @@ static void web_text() {
 }
 static void open_web() {
   lv_obj_t *m = modal(LV_SYMBOL_WIFI "  Phone page");
-  web_modal = m;
+  modal_owner(&web_modal, m);
   web_l = label(m, F14, C_WHITE, "");
   lv_obj_set_width(web_l, 304);
   lv_label_set_long_mode(web_l, LV_LABEL_LONG_WRAP);
@@ -228,7 +229,7 @@ void sd_modal_update() {
 }
 static void open_sd() {
   lv_obj_t *m = modal(LV_SYMBOL_SD_CARD "  SD card");
-  sd_modal = m;
+  modal_owner(&sd_modal, m);
   sd_l = label(m, F14, C_WHITE, "");
   lv_obj_set_width(sd_l, 304);
   lv_label_set_long_mode(sd_l, LV_LABEL_LONG_WRAP);
@@ -307,7 +308,7 @@ void web_drain() {
 }
 
 void tools_build(lv_obj_t *t) {
-  seg = Seg{}; cseg = Seg{}; items = Pool{}; dirty = true;
+  seg = Seg{}; cseg = Seg{}; dirty = true;
   static const char *N[] = {LV_SYMBOL_OK " Checklist", LV_SYMBOL_LIST " Trips", LV_SYMBOL_SETTINGS " Settings"};
   seg_make(seg, t, 6, 2, 308, 26, N, 3, [](lv_event_t *e) { tools_view((int)(intptr_t)lv_event_get_user_data(e)); });
   if (!lists_loaded) { load_lists(); lists_loaded = true; }
@@ -326,8 +327,18 @@ void tools_build(lv_obj_t *t) {
     done_mask[list_i] = 0; cp.putULong(list_i ? "m1" : "m0", 0); dirty = true; toast("Checklist reset");
   });
   lv_obj_set_pos(rst, 296, 0);
-  items.list = page_scroll(v_check, 28, PAGE_H - 30 - 28);
-  items.h = 28; items.dot = true; items.cb = item_tap; items.long_cb = item_hold;
+  items_dl = drawlist(v_check, 4, 28, 312, PAGE_H - 30 - 28, 32, [](lv_layer_t *Ly, const lv_area_t &r, int i) {
+    auto &v = L[list_i];
+    if (i >= (int)v.size()) return;
+    bool d = i < 32 && (done_mask[list_i] >> i & 1);
+    dl_dot(Ly, r, 7, 7, 6, 14, d ? C_GREEN : C_CARD2);
+    dl_text(Ly, r, 20, 5, F14, d ? C_FAINT : C_WHITE, v[i].c_str());
+    if (d) dl_text(Ly, r, 10, 5, F14, C_GREEN, LV_SYMBOL_OK, true);
+  });
+  drawlist_on_tap(items_dl, item_tap);
+  drawlist_on_hold(items_dl, item_hold);
+  items_empty = label(v_check, F14, C_DIM, "Empty list: tap + to add items.");
+  lv_obj_set_pos(items_empty, 12, 40);
 
   v_set = box(t, 320, PAGE_H - 30, C_BG);
   lv_obj_set_pos(v_set, 0, 30);
@@ -362,18 +373,9 @@ void tools_update(bool force) {
   if (seg.active == 0) {
     auto &v = L[list_i];
     int done = 0;
-    for (int i = 0; i < (int)v.size(); i++) {
-      Row &r = pool_row(items, i);
-      bool d = done_mask[list_i] >> i & 1;
-      done += d;
-      set_txt(r.title, v[i].c_str());
-      set_col(r.title, d ? C_FAINT : C_WHITE);
-      set_bg(r.dot, d ? C_GREEN : C_CARD2);
-      set_txt(r.val, d ? LV_SYMBOL_OK : "");
-      set_col(r.val, C_GREEN);
-      lv_obj_align(r.val, LV_ALIGN_RIGHT_MID, -10, 0);
-    }
-    pool_trim(items, v.size(), "Empty list: tap + to add items.");
+    for (int i = 0; i < (int)v.size() && i < 32; i++) done += done_mask[list_i] >> i & 1;
+    drawlist_count(items_dl, v.size());
+    show(items_empty, v.empty());
     set_fmt(c_prog, "%d/%d", done, (int)v.size());
     bar_fill(c_bar, c_fill, v.size() ? done * 100 / (int)v.size() : 0, done == (int)v.size() ? C_GREEN : C_TEAL);
     return;
@@ -453,7 +455,7 @@ void wifi_picker() {
   wp = Pool{};
   wp.list = page_scroll(m, 34, 206);
   wp.h = 30; wp.cb = ap_tap;
-  wp_modal = m;
+  modal_owner(&wp_modal, m);
   wp_ver = UINT32_MAX;
   request_wifi_scan();
 }

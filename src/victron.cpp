@@ -13,7 +13,6 @@ static uint8_t key[16];
 static volatile bool have_key = false;
 static char day_date[11] = "";        // date the current solar day started
 
-bool vic_has_key() { return have_key; }
 
 void vic_begin() {
   vprefs.begin("victron", false);

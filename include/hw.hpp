@@ -12,7 +12,7 @@ class LGFX : public lgfx::LGFX_Device {
     auto b = _bus.config();
     b.spi_host = HSPI_HOST;
     b.spi_mode = 0;
-    b.freq_write = 55000000;   // MicroPython ran at 20 MHz; 40 MHz safe, 55 tested
+    b.freq_write = 40000000;   // the SPI clock is 80 MHz / a whole number: 55 MHz really ran at 40 anyway
     b.freq_read = 16000000;
     b.spi_3wire = false;
     b.use_lock = true;

@@ -38,6 +38,7 @@ lv_obj_t *box(lv_obj_t *p, int w, int h, lv_color_t bg);
 lv_obj_t *card(lv_obj_t *p, int x, int y, int w, int h);
 lv_obj_t *button(lv_obj_t *p, const char *txt, int w, int h, lv_color_t bg, lv_event_cb_t cb, void *ud = nullptr);
 lv_obj_t *modal(const char *title);
+void modal_owner(lv_obj_t **p, lv_obj_t *m);   // *p = m, set back to nullptr when the modal is deleted
 lv_obj_t *page_scroll(lv_obj_t *p, int y, int h);
 void set_txt(lv_obj_t *l, const char *s);
 void set_fmt(lv_obj_t *l, const char *fmt, ...);
@@ -79,6 +80,7 @@ void drawlist_count(lv_obj_t *dl, int n);       // set rows + redraw
 void drawlist_redraw(lv_obj_t *dl);
 typedef void (*tap_fn)(int row);
 void drawlist_on_tap(lv_obj_t *dl, tap_fn fn);
+void drawlist_on_hold(lv_obj_t *dl, tap_fn fn);   // long press, set after drawlist_on_tap
 void dl_text(lv_layer_t *L, const lv_area_t &r, int x, int y, const lv_font_t *f, lv_color_t c, const char *t, bool right = false);
 void dl_dot(lv_layer_t *L, const lv_area_t &r, int x, int y, int w, int h, lv_color_t c);
 void dl_icon(lv_layer_t *L, int x, int y, int code, int size);
@@ -87,7 +89,7 @@ void dl_icon(lv_layer_t *L, int x, int y, int code, int size);
 void home_build(lv_obj_t *tab); void home_update();
 void power_build(lv_obj_t *tab); void power_update(bool force);
 void climate_build(lv_obj_t *tab); void climate_update(bool force);
-void level_build(lv_obj_t *tab); void level_update(); void open_level(); void level_modal_update();
+void level_build(lv_obj_t *tab); void level_update();
 void open_place(); void place_picker_update();
 void bank_build(lv_obj_t *tab); void bank_page_update(bool force);
 void goto_tab(int i);

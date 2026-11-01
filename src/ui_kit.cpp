@@ -72,6 +72,10 @@ lv_obj_t *modal(const char *title) {
   g_modal = m;
   return m;
 }
+void modal_owner(lv_obj_t **p, lv_obj_t *m) {
+  *p = m;
+  lv_obj_add_event_cb(m, [](lv_event_t *e) { *(lv_obj_t **)lv_event_get_user_data(e) = nullptr; }, LV_EVENT_DELETE, p);
+}
 void close_modal() { if (g_modal) { lv_obj_delete(g_modal); g_modal = nullptr; } }
 lv_obj_t *page_scroll(lv_obj_t *p, int y, int h) {
   lv_obj_t *l = lv_obj_create(p);
@@ -297,7 +301,7 @@ static void icon_paint(lv_layer_t *L, const lv_area_t &o, int code, int s) {
   }
 }
 // ---- drawn list
-struct DL { row_fn fn; int row_h, n; lv_obj_t *inner; tap_fn tap; int pressed; };
+struct DL { row_fn fn; int row_h, n; lv_obj_t *inner; tap_fn tap; int pressed; tap_fn hold; };
 static void dl_draw(lv_event_t *e) {
   lv_obj_t *in = (lv_obj_t *)lv_event_get_target(e);
   DL *d = (DL *)lv_obj_get_user_data(lv_obj_get_parent(in));
@@ -321,7 +325,7 @@ lv_obj_t *drawlist(lv_obj_t *p, int x, int y, int w, int h, int row_h, row_fn fn
   lv_obj_set_size(c, w, h);
   lv_obj_set_scroll_dir(c, LV_DIR_VER);
   lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_ACTIVE);
-  DL *d = new DL{fn, row_h, 0, nullptr, nullptr, -1};
+  DL *d = new DL{fn, row_h, 0, nullptr, nullptr, -1, nullptr};
   lv_obj_set_user_data(c, d);
   lv_obj_add_event_cb(c, dl_free, LV_EVENT_DELETE, nullptr);
   d->inner = lv_obj_create(c);
@@ -349,6 +353,11 @@ static void dl_input(lv_event_t *e) {
   lv_event_code_t code = lv_event_get_code(e);
   if (code == LV_EVENT_PRESSED) { d->pressed = dl_row_at(c); lv_obj_invalidate(d->inner); }
   else if (code == LV_EVENT_PRESS_LOST || code == LV_EVENT_SCROLL_BEGIN) { d->pressed = -1; lv_obj_invalidate(d->inner); }
+  else if (code == LV_EVENT_LONG_PRESSED) {
+    int i = dl_row_at(c);
+    d->pressed = -1; lv_obj_invalidate(d->inner);
+    if (i >= 0 && d->hold) d->hold(i);
+  }
   else if (code == LV_EVENT_SHORT_CLICKED) {
     int i = dl_row_at(c);
     d->pressed = -1; lv_obj_invalidate(d->inner);
@@ -361,6 +370,7 @@ void drawlist_on_tap(lv_obj_t *c, tap_fn fn) {
   lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(c, dl_input, LV_EVENT_ALL, nullptr);
 }
+void drawlist_on_hold(lv_obj_t *c, tap_fn fn) { ((DL *)lv_obj_get_user_data(c))->hold = fn; }   // after drawlist_on_tap
 void drawlist_redraw(lv_obj_t *c) { lv_obj_invalidate(((DL *)lv_obj_get_user_data(c))->inner); }
 void dl_text(lv_layer_t *L, const lv_area_t &r, int x, int y, const lv_font_t *f, lv_color_t c, const char *t, bool right) {
   lv_draw_label_dsc_t d; lv_draw_label_dsc_init(&d);

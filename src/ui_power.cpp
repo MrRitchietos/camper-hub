@@ -14,7 +14,11 @@ static lv_obj_t *arc, *pv, *pill, *pill_t, *chart, *chart_t, *foot;
 static lv_chart_series_t *ser;
 struct T { lv_obj_t *c, *v; };
 static T tiles[6];
-static Pool today;
+// Today: one drawn list (a few hundred bytes) instead of 4 objects per row
+struct Stat { lv_color_t dot, vc; char t[28], v[36]; };
+static Stat stats[14];
+static int n_stats = 0;
+static lv_obj_t *today_dl;
 static lv_obj_t *days_dl, *days_empty;
 static std::vector<DayRec> dcopy;
 static int dmax = 50;
@@ -57,7 +61,7 @@ static T tile(lv_obj_t *p, int x, int y, const char *cap, lv_color_t accent) {
 }
 
 void power_build(lv_obj_t *t) {
-  seg = Seg{}; today = Pool{}; ver = hver = dver = UINT32_MAX;
+  seg = Seg{}; n_stats = 0; ver = hver = dver = UINT32_MAX;
   static const char *N[] = {"Solar", "Today", "Days"};
   seg_make(seg, t, 30, 2, 260, 26, N, 3, seg_cb);
 
@@ -117,8 +121,13 @@ void power_build(lv_obj_t *t) {
   // ---- today
   v_today = box(t, 320, PAGE_H - 30, C_BG);
   lv_obj_set_pos(v_today, 0, 30);
-  today.list = page_scroll(v_today, 0, PAGE_H - 30);
-  today.h = 26; today.dot = true;
+  today_dl = drawlist(v_today, 4, 0, 312, PAGE_H - 30, 30, [](lv_layer_t *L, const lv_area_t &r, int i) {
+    if (i >= n_stats) return;
+    const Stat &s = stats[i];
+    dl_dot(L, r, 7, 7, 6, 12, s.dot);
+    dl_text(L, r, 20, 4, F14, C_WHITE, s.t);
+    dl_text(L, r, 10, 4, F14, s.vc, s.v, true);
+  });
 
   // ---- days
   v_days = box(t, 320, PAGE_H - 30, C_BG);
@@ -235,12 +244,9 @@ static void day_row(lv_layer_t *L, const lv_area_t &r, int k) {
   dl_text(L, r, 10, 9, F16, C_AMBER, b, true);
 }
 static void stat(int &i, lv_color_t dot, const char *title, const char *val, lv_color_t vc = C_WHITE) {
-  Row &r = pool_row(today, i++);
-  set_bg(r.dot, dot);
-  set_txt(r.title, title);
-  set_txt(r.val, val);
-  set_col(r.val, vc);
-  lv_obj_align(r.val, LV_ALIGN_RIGHT_MID, -10, 0);
+  if (i >= (int)(sizeof stats / sizeof stats[0])) return;
+  Stat &s = stats[i++];
+  s.dot = dot; s.vc = vc; strlcpy(s.t, title, sizeof s.t); strlcpy(s.v, val, sizeof s.v);
 }
 static void dur(char *o, size_t n, uint32_t s) {
   if (s < 3600) snprintf(o, n, "%u min", (unsigned)(s / 60)); else snprintf(o, n, "%uh %02um", (unsigned)(s / 3600), (unsigned)(s / 60 % 60));
@@ -291,6 +297,7 @@ static void bs_fmt(char *o, size_t n, int i, int v) {
 }
 static void bs_row(lv_layer_t *L, const lv_area_t &r, int i) {
   char b[32];
+  if (i == BS_N + 1) { dl_text(L, r, 12, 6, F14, C_RED, LV_SYMBOL_TRASH "  Forget this power bank"); return; }
   if (i == BS_N) {
     snprintf(b, sizeof b, "AC charge knob: %d W", kb.s_aclvl * 200);
     dl_text(L, r, 12, 6, F14, C_DIM, b);
@@ -303,6 +310,7 @@ static void bs_row(lv_layer_t *L, const lv_area_t &r, int i) {
   dl_text(L, r, 10, 6, F14, C_PURPLE, b, true);
 }
 static void bs_tap(int i) {
+  if (i == BS_N + 1) { bank_forget(); close_modal(); toast("Forgotten: the next power bank close by is paired"); return; }
   if (i >= BS_N) return;
   { Lock l; kb = S.bank; }
   if (!kb.s_ok) { toast("Still reading the settings..."); return; }
@@ -325,9 +333,9 @@ void bank_settings_update() {
 void bank_settings() {
   { Lock l; kb = S.bank; if (!kb.connected) { toast("Power bank not connected"); return; } }
   lv_obj_t *m = modal(LV_SYMBOL_SETTINGS "  Power bank settings");
-  bs_modal = m;
+  modal_owner(&bs_modal, m);
   bs_list = drawlist(m, 4, 34, 312, 204, 30, bs_row);
-  drawlist_count(bs_list, BS_N + 1);
+  drawlist_count(bs_list, BS_N + 2);
   drawlist_on_tap(bs_list, bs_tap);
   bs_ver = UINT32_MAX;
 }
@@ -446,7 +454,7 @@ void power_update(bool force) {
     stat(i, v.last_error ? C_RED : C_GREEN, "Last charger error", b, v.last_error ? C_RED : C_WHITE);
     const char *m = vic_model(v.model);
     stat(i, C_PURPLE, m ? m : "Victron charger", S.demo ? "demo" : v.addr);
-    pool_trim(today, i, "");
+    n_stats = i; drawlist_count(today_dl, i);
     return;
   }
 

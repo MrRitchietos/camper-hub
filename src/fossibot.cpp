@@ -2,6 +2,7 @@
 // service 0xA002, write 0xC304, notify 0xC305. Read 80 input registers: 11 04 0000 0050 + CRC16/Modbus (high
 // byte first). Reply: 11 04 .. registers from byte 6, big endian. No pairing. Only one phone/board at a time.
 #include <NimBLEDevice.h>
+#include <Preferences.h>
 #include "internal.hpp"
 
 namespace app {
@@ -12,7 +13,12 @@ static NimBLEClient *cli = nullptr;
 static NimBLERemoteCharacteristic *wr = nullptr;
 static uint8_t buf[200]; static size_t blen = 0;
 static uint32_t last_poll = 0, last_try = 0, last_rx = 0;
-void bank_reset_timers();
+// Own power bank: the first one that answers (close by) is remembered, after that only that address is used,
+// so a neighbour's Fossibot on a campsite is never switched. Bank settings > Forget clears it.
+static char own[18] = "";
+static bool own_loaded = false;
+static volatile bool save_own = false, forget_req = false;
+void bank_forget() { forget_req = true; }
 // write queue: the F1200 has none, so writes go out >= 300 ms apart, settings are re-read after each one
 struct W { uint16_t reg, val; };
 static W wq[8]; static volatile int wq_n = 0;
@@ -72,11 +78,16 @@ void bank_switch(int output, bool on) {
 }
 
 void bank_seen(const void *p) {
-  if (fb_found || demo_on) return;
+  if (fb_found || demo_on || !own_loaded) return;
   auto *d = (const NimBLEAdvertisedDevice *)p;
+  if (own[0]) { if (strcasecmp(d->getAddress().toString().c_str(), own)) return; }
+  else {
+    std::string n = d->haveName() ? d->getName() : std::string();
+    bool named = n.rfind("FOSSIBOT", 0) == 0 || n.rfind("POWER", 0) == 0 || n.rfind("SYDPOWER", 0) == 0;
+    if (!named && !d->isAdvertisingService(NimBLEUUID((uint16_t)0xA002))) return;
+    if (d->getRSSI() < -72) return;                   // first time: only one standing close (in the camper)
+  }
   std::string n = d->haveName() ? d->getName() : std::string();
-  bool named = n.rfind("FOSSIBOT", 0) == 0 || n.rfind("POWER", 0) == 0 || n.rfind("SYDPOWER", 0) == 0;
-  if (!named && !d->isAdvertisingService(NimBLEUUID((uint16_t)0xA002))) return;
   fb_addr = d->getAddress();
   fb_found = true;
   Lock l;
@@ -90,6 +101,7 @@ void bank_seen(const void *p) {
 static void parse_settings() {
   if (blen < 6 + 80 * 2) return;
   auto reg = [&](int i) { return (uint16_t)(buf[6 + 2 * i] << 8 | buf[7 + 2 * i]); };
+  if (!own[0]) save_own = true;
   Lock l;
   Bank &b = S.bank;
   b.s_aclvl = reg(13); b.s_dc_amp = reg(20); b.s_key = reg(56); b.s_silent = reg(57);
@@ -129,6 +141,7 @@ static void on_notify(NimBLERemoteCharacteristic *, uint8_t *d, size_t n, bool) 
   if (n >= 2 && d[0] == 0x11 && (d[1] & 0x7F) == 0x06) { reread_at = millis() + 600; return; }   // write echo
   if (n >= 2 && d[0] == 0x11 && (d[1] & 0x80)) return;                                         // refused
   if (n >= 2 && d[0] == 0x11 && (d[1] == 0x04 || d[1] == 0x03)) blen = 0;     // start of a reply
+  if (n > sizeof buf) { blen = 0; return; }
   if (blen + n > sizeof buf) blen = 0;
   memcpy(buf + blen, d, n); blen += n;
   if (buf[1] == 0x04) parse(); else if (buf[1] == 0x03) parse_settings();
@@ -165,6 +178,19 @@ static void demo() {
 void bank_service() {
   uint32_t now = millis();
   if (demo_on) { if (now - last_poll > 1000) { last_poll = now; demo(); } return; }
+  if (!own_loaded) { Preferences p; p.begin("bank", true); p.getString("addr", own, sizeof own); p.end(); own_loaded = true; }
+  if (save_own && fb_found) {
+    save_own = false; strlcpy(own, fb_addr.toString().c_str(), sizeof own);
+    Preferences p; p.begin("bank", false); p.putString("addr", own); p.end(); log_event("power bank %s remembered", own);
+  }
+  if (forget_req) {
+    forget_req = false; own[0] = 0; save_own = false;
+    Preferences p; p.begin("bank", false); p.remove("addr"); p.end();
+    if (cli && cli->isConnected()) cli->disconnect();
+    wr = nullptr; fb_found = false;
+    { Lock l; uint32_t v = S.bank.ver; S.bank = Bank(); S.bank.ver = v + 1; }
+    log_event("power bank forgotten");
+  }
   if (!fb_found) return;
   if (!cli || !cli->isConnected()) {
     wr = nullptr;

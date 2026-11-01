@@ -31,7 +31,8 @@ static LGFX tft;
 LGFX &app_tft() { return tft; }
 namespace app { bool photos_begin(); void photos_tick(); }
 static bool photo_mode = false;          // the photo screensaver draws straight to the panel: LVGL flushes are dropped
-static constexpr int W = 320, H = 240, BUF_LINES = 10;
+extern "C" size_t lv_mem_spilled(void), lv_mem_spilled_max(void);
+static constexpr int W = 320, H = 240, BUF_LINES = 12;   // one buffer: 5 KB more free RAM than two
 static uint32_t last_touch = 0;
 static bool dimmed = false, dark = false;
 static volatile bool want_wake = false;
@@ -42,8 +43,7 @@ static void flush(lv_display_t *d, const lv_area_t *a, uint8_t *px) {
   uint32_t w = lv_area_get_width(a), h = lv_area_get_height(a);
   lv_draw_sw_rgb565_swap(px, w * h);
   if (tft.getStartCount() == 0) tft.startWrite();
-  tft.pushImageDMA(a->x1, a->y1, w, h, (lgfx::swap565_t *)px);
-  lv_display_flush_ready(d);
+  tft.pushImageDMA(a->x1, a->y1, w, h, (lgfx::swap565_t *)px);   // LVGL waits for it (flush_wait) before reusing the buffer
 }
 static void read_touch(lv_indev_t *, lv_indev_data_t *data) {
   int16_t x, y;
@@ -85,7 +85,7 @@ static void sound() {
   if (!beep_pat) return;
   const int *p = beep_pat == 1 ? P1 : P2;
   int n = beep_pat == 1 ? 4 : 12;
-  if (millis() < beep_t) return;
+  if ((int32_t)(millis() - beep_t) < 0) return;      // safe over the 49 day millis() wrap
   if (beep_step >= n) { speaker::tone(0); beep_pat = 0; return; }
   speaker::tone(p[beep_step]);
   beep_t = millis() + p[beep_step + 1];
@@ -101,14 +101,7 @@ static void console() {
     String cmd = line; line = "";
     if (cmd.startsWith("vkey ")) Serial.println(vic_set_key(cmd.substring(5).c_str()) ? "ok" : "bad key");
     else if (cmd == "demo") { set_demo(!demo_on); Serial.printf("demo %d\n", (int)demo_on); }
-    else if (cmd == "vtest") {   // victron-ble test vector: expect Absorption 1388 cV 14 dA 19 W
-      static const uint8_t pkt[] = {0xE1, 0x02, 0x10, 0x02, 0x42, 0xA0, 0x01, 0x62, 0x07, 0xAD, 0xCE, 0xB3, 0x7B, 0x60,
-                                    0x5D, 0x7E, 0x0E, 0xE2, 0x1B, 0x24, 0xDF, 0x5C};
-      vic_set_key("adeccb947395801a4dd45a2eaa44bf17");
-      vic_parse(std::string((const char *)pkt, sizeof pkt), "test", -50);
-      { Lock l; Serial.printf("vtest: %s %d cV %d dA %d W\n", vic_state(S.vic.state), S.vic.vbat_cv, S.vic.ibat_da, S.vic.pv_w); }
-      vic_set_key("");
-    } else if (cmd == "vic") {
+    else if (cmd == "vic") {
       Lock l; auto &v = S.vic;
       Serial.printf("key=%d seen=%d bad=%d dec=%d %s %04X rssi=%d %s %dcV %ddA %dW y=%d peak=%d hist=%d soc=%d\n", v.have_key, v.seen, v.key_bad,
                     v.decoded, v.addr, v.model, v.rssi, vic_state(v.state), v.vbat_cv, v.ibat_da, v.pv_w, v.yield_10wh, v.peak_w, v.hist_n, vic_soc(v));
@@ -144,14 +137,18 @@ static void console() {
       if (tft.getStartCount()) { tft.waitDMA(); tft.endWrite(); }
       static uint16_t line[320];
       Serial.printf("SHOT %d %d\n", tft.width(), tft.height());
-      for (int y = 0; y < tft.height(); y++) { tft.readRect(0, y, tft.width(), 1, line); Serial.write((uint8_t *)line, tft.width() * 2); }
+      for (int y = 0; y < tft.height(); y++) { tft.readRect(0, y, tft.width(), 1, line); Serial.write((uint8_t *)line, tft.width() * 2); feedLoopWDT(); }
       Serial.println("\nEND");
     }
     else if (cmd.startsWith("pv ")) ui::power_view_test(cmd.substring(3).toInt());
     else if (cmd.startsWith("bs ")) ui::bank_settings_test(cmd.substring(3).toInt());
     else if (cmd == "bank") { app::Lock l; auto &b = app::S.bank; Serial.printf("bank conn=%d soc=%.1f in=%d out=%d usb=%d dc=%d ac=%d light=%d key=%d screen=%d acsb=%d idle=%d\n", b.connected, b.soc, b.in_w, b.out_w, b.usb, b.dc, b.ac, b.light_mode, b.s_key, b.s_screen, b.s_ac_sb, b.s_idle); }
     else if (cmd == "tasks") Serial.printf("stack free: radio %u sd %u web %u loop %u\n", uxTaskGetStackHighWaterMark(task_radio), uxTaskGetStackHighWaterMark(task_sd), task_web ? uxTaskGetStackHighWaterMark(task_web) : 0, uxTaskGetStackHighWaterMark(nullptr));
-    else if (cmd == "heap") Serial.printf("heap %u min %u big %u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    else if (cmd == "heap") {
+      lv_mem_monitor_t m; lv_mem_monitor(&m);
+      Serial.printf("heap %u min %u big %u | screen pool free %u max used %u big %u, on heap %u (max %u)\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
+                    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT), (unsigned)m.free_size, (unsigned)m.max_used, (unsigned)m.free_biggest_size, (unsigned)lv_mem_spilled(), (unsigned)lv_mem_spilled_max());
+    }
   }
 }
 
@@ -175,9 +172,10 @@ void setup() {
   lv_display_t *disp = lv_display_create(W, H);
   size_t sz = W * BUF_LINES * 2;
   void *b1 = heap_caps_malloc(sz, MALLOC_CAP_DMA);
-  void *b2 = heap_caps_malloc(sz, MALLOC_CAP_DMA);
-  lv_display_set_buffers(disp, b1, b2, sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
+  if (!b1) { Serial.println("no RAM for the screen buffer, restarting"); delay(1000); ESP.restart(); }
+  lv_display_set_buffers(disp, b1, nullptr, sz, LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_display_set_flush_cb(disp, flush);
+  lv_display_set_flush_wait_cb(disp, [](lv_display_t *) { tft.waitDMA(); });
   lv_indev_t *in = lv_indev_create();
   lv_indev_set_type(in, LV_INDEV_TYPE_POINTER);
   lv_indev_set_read_cb(in, read_touch);
@@ -206,6 +204,7 @@ void setup() {
   Serial.printf("heap after ui %u\n", (unsigned)ESP.getFreeHeap());
   last_touch = millis();
   Serial.printf("CAMPER READY heap %u\n", (unsigned)ESP.getFreeHeap());
+  enableLoopWDT();                                     // a frozen screen restarts by itself (and counts for the update guard)
 }
 
 void loop() {

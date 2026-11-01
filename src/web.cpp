@@ -49,18 +49,27 @@ void web_begin_code() {
 }
 
 extern const char PAGE[];
+static bool login();
 static bool auth() {
-  if (ESP.getFreeHeap() < 16000 || heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 6000) {   // never push the board over
+  if (ESP.getFreeHeap() < 20000 || heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 8000) {   // never push the board over
     srv->send(503, "text/plain", "busy, try again");
     return false;
   }
-  if (srv->authenticate("camper", code)) return true;
+  return login();
+}
+// login + for changes the X-Camper header: a browser only sends that from our own page, never from another website
+static bool login() {
+  if (srv->authenticate("camper", code) && (srv->method() == HTTP_GET || srv->header("X-Camper") == "1")) return true;
   srv->requestAuthentication(BASIC_AUTH, "Camper hub");
   return false;
 }
 static void ok() { srv->send(200, "application/json", "{\"ok\":true}"); }
 static String arg(const char *n) { return srv->hasArg(n) ? srv->arg(n) : String(); }
-static bool safe_name(const String &n) { return n.length() && n.length() < 64 && n.indexOf('/') < 0 && n.indexOf("..") < 0 && n[0] != '.'; }
+static bool safe_name(const String &n) {             // letters, digits, space . _ - only (no paths, no hidden files)
+  if (!n.length() || n.length() >= 64 || n[0] == '.') return false;
+  for (char c : n) if (!isalnum((uint8_t)c) && !strchr(" ._-", c)) return false;
+  return true;
+}
 static String dir_of(const String &d) { return d == "photos" ? "/camper/photos" : "/camper"; }
 
 // JSON straight to the socket in 512 byte pieces (no big String in RAM)
@@ -177,31 +186,36 @@ static void api_lists() {
 static void api_files() {
   String dn = dir_of(arg("d"));
   File d = SD.open(dn);
-  String out = "[";
+  srv->setContentLength(CONTENT_LENGTH_UNKNOWN);       // streamed: any number of files, no big String
+  srv->send(200, "application/json", "");
+  char b[128]; bool first = true;
+  srv->sendContent("[");
   if (d) {
     for (File f = d.openNextFile(); f; f = d.openNextFile()) {
       const char *n = strrchr(f.name(), '/'); n = n ? n + 1 : f.name();
-      if (!f.isDirectory() && n[0] != '.' && strcmp(n, "settings.tmp")) {
-        if (out.length() > 1) out += ",";
-        out += "{\"n\":\""; out += n; out += "\",\"s\":"; out += String((unsigned)f.size()); out += "}";
+      if (!f.isDirectory() && safe_name(n) && strcmp(n, "settings.tmp")) {
+        snprintf(b, sizeof b, "%s{\"n\":\"%s\",\"s\":%u}", first ? "" : ",", n, (unsigned)f.size());
+        srv->sendContent(b); first = false;
       }
       f.close();
-      if (out.length() > 12000) break;
     }
     d.close();
   }
-  out += "]";
-  srv->send(200, "application/json", out);
+  srv->sendContent("]");
+  srv->sendContent("");
 }
 
 bool ble_stop(); void ble_pause(bool on);
 static bool fw_busy = false;
 static File up;
 static String up_err;
+static bool up_ok = false;                           // login checked once at the start of an upload
 static void upload_file() {
   HTTPUpload &u = srv->upload();
   if (u.status == UPLOAD_FILE_START) {
-    up_err = ""; ble_pause(true);
+    up_err = ""; up_ok = login();
+    if (!up_ok) return;
+    ble_pause(true);
     String d = dir_of(arg("d")), n = u.filename;
     int s = n.lastIndexOf('/'); if (s >= 0) n = n.substring(s + 1);
     if (!safe_name(n)) { up_err = "bad name"; return; }
@@ -209,13 +223,17 @@ static void upload_file() {
     up = SD.open((d + "/" + n).c_str(), FILE_WRITE);
     if (!up) up_err = "cannot write the card";
   } else if (u.status == UPLOAD_FILE_WRITE) {
-    if (up) up.write(u.buf, u.currentSize);
+    if (up_ok && up && up.write(u.buf, u.currentSize) != u.currentSize) { up_err = "card full or broken"; up.close(); }
+  } else if (u.status == UPLOAD_FILE_END || u.status == UPLOAD_FILE_ABORTED) {
+    if (up) up.close();
+    if (u.status == UPLOAD_FILE_ABORTED && up_ok) up_err = "upload broke off";
+    if (up_ok) ble_pause(false);
   }
-  else if (u.status == UPLOAD_FILE_END || u.status == UPLOAD_FILE_ABORTED) { if (up) up.close(); ble_pause(false); }
 }
 static void upload_fw() {
   HTTPUpload &u = srv->upload();
-  if (u.status == UPLOAD_FILE_START) { up_err = ""; fw_busy = true; log_event("firmware upload from the phone page"); ble_stop(); if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) { up_err = String("update cannot start: ") + Update.errorString(); Serial.println(up_err); } }
+  if (u.status == UPLOAD_FILE_START) { up_err = ""; up_ok = login(); if (!up_ok) return; fw_busy = true; log_event("firmware upload from the phone page"); ble_stop(); if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) { up_err = String("update cannot start: ") + Update.errorString(); Serial.println(up_err); } }
+  else if (!up_ok) return;
   else if (u.status == UPLOAD_FILE_WRITE) {
     if (!up_err.length() && Update.write(u.buf, u.currentSize) != u.currentSize) up_err = "write failed";
     if ((u.totalSize & 0x1FFFF) < HTTP_UPLOAD_BUFLEN) Serial.printf("fw upload %u KB heap %u\n", (unsigned)(u.totalSize / 1024), (unsigned)ESP.getFreeHeap());
@@ -248,7 +266,9 @@ static void routes() {
     if (!auth()) return;
     String n = arg("n");
     if (!safe_name(n)) { srv->send(400, "text/plain", "bad name"); return; }
-    SD.remove((dir_of(arg("d")) + "/" + n).c_str()); ok();
+    String path = dir_of(arg("d")) + "/" + n;
+    if (arg("d") == "photos") photos_drop_cache(path.c_str());
+    SD.remove(path.c_str()); ok();
   });
   srv->on("/f", HTTP_GET, [] {
     if (!auth()) return;
@@ -261,13 +281,13 @@ static void routes() {
     srv->streamFile(f, type);
     f.close();
   });
-  srv->on("/upload", HTTP_POST, [] { if (!auth()) return; if (up_err.length()) srv->send(500, "text/plain", up_err); else ok(); }, [] { if (auth()) upload_file(); });
+  srv->on("/upload", HTTP_POST, [] { if (!up_ok) { login(); return; } if (up_err.length()) srv->send(500, "text/plain", up_err); else ok(); }, upload_file);
   srv->on("/update", HTTP_POST, [] {
-    if (!auth()) return;
+    if (!up_ok) { login(); return; }
     bool bad = up_err.length() || Update.hasError();
     if (bad) srv->send(500, "text/plain", up_err.length() ? up_err : "update failed"); else ok();
     if (fw_busy) { delay(800); sd_restart(); }          // Bluetooth was switched off for the upload: start clean
-  }, [] { if (auth()) upload_fw(); });
+  }, upload_fw);
   srv->onNotFound([] { srv->send(404, "text/plain", "not here"); });
 }
 
@@ -278,11 +298,15 @@ static bool web_service() {
   if (want && !srv) {
     srv = new WebServer(80);
     routes();
+    static const char *H[] = {"X-Camper"};
+    srv->collectHeaders(H, 1);
     srv->begin();
     Serial.printf("web: on, heap %u\n", (unsigned)ESP.getFreeHeap());
   } else if (!want && srv) { srv->stop(); delete srv; srv = nullptr; Serial.println("web: off"); }
   // only take a request while the board has room for it (else it waits in the network queue a moment)
-  if (srv && ESP.getFreeHeap() > 26000 && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > 12000) srv->handleClient();
+  // always served: a waiting connection holds network memory that only frees once it is handled.
+  // When memory is low each request answers "busy" itself (auth), cheap and without big allocations.
+  if (srv) srv->handleClient();
   return srv != nullptr;
 }
 static void task(void *) {

@@ -103,7 +103,7 @@ void connect_to(const char *ssid, const char *pass);
 void set_demo(bool on);
 // victron.cpp
 bool vic_set_key(const char *hex);      // 32 hex chars, "" = forget
-bool vic_has_key();
+
 void vic_settings(uint8_t batt, int16_t alarm_cv);
 const char *vic_model(uint16_t id);
 const char *vic_state(uint8_t s);
@@ -120,7 +120,8 @@ void level_next_tag();
 void level_zero();
 // fossibot.cpp
 void bank_switch(int output, bool on);   // 0 USB, 1 DC, 2 AC, 3 light
-bool bank_set(uint16_t reg, uint16_t val);   // guarded settings write (false = refused)
+bool bank_set(uint16_t reg, uint16_t val);
+void bank_forget();                       // pair again with the next power bank close by   // guarded settings write (false = refused)
 // logger.cpp
 void logger_begin();
 // weather place: auto (from the internet connection) or pinned to a town
@@ -167,10 +168,10 @@ enum SdJob : uint8_t { J_NONE, J_BACKUP, J_RESTORE, J_UPDATE };
 void sd_job(uint8_t job);                      // J_NONE = refresh SDI
 struct SdInfo { bool backup = false, update = false; uint32_t update_kb = 0; char backup_at[20] = ""; char msg[48] = ""; int files = 0; uint32_t ver = 0; };
 extern SdInfo SDI;
-int photos_count();
+int photos_count(); void photos_drop_cache(const char *path);
 // ---- phone page (web.cpp); changes come to the UI task through a queue
 struct WebCmd { char op[8]; char key[12]; int a, b; char text[72]; };
-void web_begin_code(); const char *web_code(); bool web_set_pass(const char *p);
+void web_begin_code(); const char *web_code(); bool web_set_pass(const char *p); void ap_new_pass();
 void web_enable(bool on); bool web_on();
 bool web_cmd_pop(WebCmd &c);
 void ap_enable(bool on);                       // radio.cpp

@@ -4,8 +4,8 @@
 
 #define LV_COLOR_DEPTH 16
 
-// use the normal heap (malloc) instead of a fixed LVGL pool: far more room on the ESP32
-#define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
+// the screen gets a reserved 40 KB pool and borrows from the heap only when that is full
+#define LV_USE_STDLIB_MALLOC  LV_STDLIB_CUSTOM   // own pool + heap overflow: src/lv_mem_camper.cpp
 #define LV_USE_STDLIB_STRING  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
 
@@ -15,6 +15,10 @@
 // (LV_ATTRIBUTE_FAST_MEM IRAM_ATTR tried: IRAM overflows with wifi + BT)
 #define LV_USE_OS LV_OS_NONE        // LVGL only touched from the UI loop
 #define LV_USE_LOG 0
+// layers (opacity, transforms) are drawn in small pieces: 8 KB instead of 24 KB peak at once
+#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (8 * 1024)
+// faster style lookups for a few bytes per object
+#define LV_OBJ_STYLE_CACHE 1
 #define LV_USE_ASSERT_NULL 0
 #define LV_USE_ASSERT_MALLOC 0
 

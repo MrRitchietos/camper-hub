@@ -154,7 +154,7 @@ void place_picker_update() {
 }
 void open_place() {
   lv_obj_t *m = modal(LV_SYMBOL_GPS "  Weather place");
-  pl_modal = m;
+  modal_owner(&pl_modal, m);
   lv_obj_t *a = button(m, LV_SYMBOL_REFRESH " Auto", 120, 30, C_CARD2, [](lv_event_t *) {
     place_auto(); close_modal(); toast("Weather place: auto (from the internet)");
   });
