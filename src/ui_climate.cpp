@@ -180,7 +180,7 @@ void climate_build(lv_obj_t *t) {
   w_card = card(t, 4, 4, 312, 72);
   lv_obj_add_flag(w_card, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_set_style_bg_color(w_card, C_CARD2, LV_STATE_PRESSED);
-  lv_obj_add_event_cb(w_card, open_forecast, LV_EVENT_CLICKED, nullptr);
+  on_tap(w_card, open_forecast);
   w_icon = lv_obj_create(w_card);
   lv_obj_remove_style_all(w_icon);
   lv_obj_set_pos(w_icon, 8, 6);

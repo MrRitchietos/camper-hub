@@ -5,10 +5,11 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <SD.h>
+#include <esp_task_wdt.h>
 #include "hw.hpp"
 #include "internal.hpp"
 
-namespace ui { void saver_show(bool on); void saver_tick(); bool saver_on(); void begin(); bool alarm_active(); void goto_tab(int i); void open_forecast_test(int view); void close_modal(); void power_view_test(int i); void tools_view_test(int i); void open_place(); void bank_settings_test(int tap); void look_request(); }
+namespace ui { void saver_show(bool on); void saver_tick(); bool saver_on(); void begin(); bool alarm_active(); void goto_tab(int i); void open_forecast_test(int view); void close_modal(); void power_view_test(int i); void tools_view_test(int i); void open_place(); void bank_settings_test(int tap); void look_request(); void tap_track(lv_indev_t *in, bool down, int x, int y); }
 namespace app {
 Settings cfg;
 static Preferences sp;
@@ -40,16 +41,27 @@ static volatile bool want_wake = false;
 static constexpr uint32_t DIM_AFTER = 5 * 60 * 1000;
 
 static bool shot_mode = false;                         // "shot": exact frame as LVGL draws it, sent over serial
+static uint32_t px_flushed = 0;                        // "fps": how much of the screen is repainted while idle
 static void flush(lv_display_t *d, const lv_area_t *a, uint8_t *px) {
   if (photo_mode) { lv_display_flush_ready(d); return; }
   uint32_t w = lv_area_get_width(a), h = lv_area_get_height(a);
+  px_flushed += w * h;
   if (shot_mode) { Serial.printf("AREA %d %d %u %u\n", (int)a->x1, (int)a->y1, (unsigned)w, (unsigned)h); Serial.write(px, w * h * 2); feedLoopWDT(); }
   lv_draw_sw_rgb565_swap(px, w * h);
   if (tft.getStartCount() == 0) tft.startWrite();
   tft.pushImageDMA(a->x1, a->y1, w, h, (lgfx::swap565_t *)px);   // LVGL waits for it (flush_wait) before reusing the buffer
 }
-static void read_touch(lv_indev_t *, lv_indev_data_t *data) {
+// serial "swipe"/"tap": fake touches for testing the tap guard (sim_on overrides the panel)
+static bool sim_on = false, sim_down = false;
+static int16_t sim_x = 0, sim_y = 0;
+static void read_touch(lv_indev_t *in, lv_indev_data_t *data) {
   int16_t x, y;
+  if (sim_on) {
+    data->point.x = sim_x; data->point.y = sim_y;
+    data->state = sim_down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    ui::tap_track(in, sim_down, sim_x, sim_y);
+    return;
+  }
   if (touch::read(x, y)) {
     last_touch = millis();
     if (dimmed) {                        // first touch only wakes the screen
@@ -60,7 +72,18 @@ static void read_touch(lv_indev_t *, lv_indev_data_t *data) {
     }
     data->point.x = x; data->point.y = y;
     data->state = LV_INDEV_STATE_PRESSED;
-  } else data->state = LV_INDEV_STATE_RELEASED;
+    ui::tap_track(in, true, x, y);
+  } else { data->state = LV_INDEV_STATE_RELEASED; ui::tap_track(in, false, 0, 0); }
+}
+// finger from (x0,y0) to (x1,y1) in ms, then lifted; LVGL runs in between like with a real finger
+static void sim_stroke(int x0, int y0, int x1, int y1, int ms) {
+  sim_on = true;
+  int n = max(1, ms / 10);
+  for (int i = 0; i <= n; i++) {
+    sim_down = true; sim_x = x0 + (x1 - x0) * i / n; sim_y = y0 + (y1 - y0) * i / n;
+    lv_timer_handler(); esp_task_wdt_reset(); delay(10);
+  }
+  sim_down = false; lv_timer_handler(); delay(10); lv_timer_handler();
 }
 static uint32_t tick_cb() { return millis(); }
 void app::screen_wake() { last_touch = millis(); want_wake = true; }
@@ -102,7 +125,13 @@ static void console() {
     char c = Serial.read();
     if (c != '\n') { if (c != '\r') line += c; continue; }
     String cmd = line; line = "";
-    if (cmd == "vkey remove") { vic_forget_key(); Serial.println("key removed"); }
+    if (cmd.startsWith("swipe ") || cmd.startsWith("tap ")) {   // swipe x0 y0 x1 y1 ms | tap x y
+      int v[5] = {0, 0, 0, 0, 120}; int n = sscanf(cmd.c_str() + cmd.indexOf(' ') + 1, "%d %d %d %d %d", &v[0], &v[1], &v[2], &v[3], &v[4]);
+      if (cmd[0] == 't') sim_stroke(v[0], v[1], v[0], v[1], 10); else if (n >= 4) sim_stroke(v[0], v[1], v[2], v[3], v[4]);
+      sim_on = false;
+      Serial.println("done");
+    }
+    else if (cmd == "vkey remove") { vic_forget_key(); Serial.println("key removed"); }
     else if (cmd.startsWith("vkey ")) { int r = vic_set_key(cmd.substring(5).c_str()); Serial.println(r > 0 ? "ok" : r < 0 ? "locked: vkey remove first" : "bad key"); }
     else if (cmd == "ls" || cmd.startsWith("ls ")) {     // SD listing: ls [/dir]
       String d = cmd.length() > 3 ? cmd.substring(3) : String("/camper");
@@ -137,6 +166,11 @@ static void console() {
     else if (cmd.startsWith("tab ")) ui::goto_tab(cmd.substring(4).toInt());
     else if (cmd.startsWith("fc ")) ui::open_forecast_test(cmd.substring(3).toInt());
     else if (cmd == "close") ui::close_modal();
+    else if (cmd == "fps") {           // screens' worth of pixels repainted per second over 3 s (0 = idle, nothing redrawn)
+      uint32_t p0 = px_flushed, t0 = millis();
+      while (millis() - t0 < 3000) { lv_timer_handler(); esp_task_wdt_reset(); delay(5); }
+      Serial.printf("fps %.2f screens/s\n", (px_flushed - p0) / 3.0f / (W * H));
+    }
     else if (cmd.startsWith("ts ")) ui::tools_view_test(cmd.substring(3).toInt());
     else if (cmd == "place") ui::open_place();
     else if (cmd == "saver") { dimmed = true; ui::saver_show(true); }

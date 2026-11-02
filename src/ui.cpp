@@ -155,7 +155,7 @@ void look_check() {
   if (!set_look(want_day())) return;
   if (g_modal) close_modal();
   shell_style();
-  if (cur == T_TOOLS) tools_leave();
+  if (cur == T_TOOLS) { tools_keep(); tools_leave(); }
   lv_obj_clean(tabs[cur]);
   build_page(cur);
   switch (cur) {
@@ -235,7 +235,7 @@ void begin() {
 
   alarm = box(lv_layer_top(), 320, 26, C_RED);
   lv_obj_add_flag(alarm, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(alarm, [](lv_event_t *) { snoozed = true; snooze_at = millis(); show(alarm, false); toast("Alarm snoozed for 30 min"); }, LV_EVENT_CLICKED, nullptr);
+  on_tap(alarm, [](lv_event_t *) { snoozed = true; snooze_at = millis(); show(alarm, false); toast("Alarm snoozed for 30 min"); });
   lv_obj_center(label(alarm, F14, C_WHITE, ""));
   show(alarm, false);
 

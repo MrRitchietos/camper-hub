@@ -39,9 +39,12 @@ The screenshots are taken from the board in demo mode (Tools > Settings > Demo),
 
 **Tools.** Checklists for leaving and arriving (tap to tick, hold to remove), the trip diary with one line per day, and all settings.
 
+In Settings and Power bank settings only the value on the right (the rounded button) reacts to a tap, so scrolling with your thumb on the left never changes anything. Everywhere on the screen a touch only counts as a tap when the finger stays put: a swipe, or a touch that stops a list that is still scrolling, never changes a setting. Forgetting the power bank needs a second tap within 4 seconds.
+
 <p>
 <img src="docs/screens/level.png" width="260" alt="Level">
 <img src="docs/screens/checklist.png" width="260" alt="Checklist">
+<img src="docs/screens/settings.png" width="260" alt="Settings">
 <img src="docs/screens/solar-day.png" width="260" alt="Solar in the day look">
 </p>
 
@@ -94,4 +97,4 @@ PlatformIO: `pio run -t upload`. An optional `include/secrets.hpp` can hold a fi
 
 Release builds leave it out: `tools/release.sh 1.2.0`.
 
-The serial console (115200 baud) has a few test commands, for example `demo` (toggle demo mode), `heap`, `tasks` and `shot` (a screenshot in the exact colours the board draws), plus `ls` and `cat <file>` to read the SD card logs.
+The serial console (115200 baud) has a few test commands, for example `demo` (toggle demo mode), `heap`, `tasks` and `shot` (a screenshot in the exact colours the board draws), plus `ls` and `cat <file>` to read the SD card logs, `fps` (how much of the screen is redrawn while idle) and `tap x y` / `swipe x0 y0 x1 y1 ms` to test touch handling.

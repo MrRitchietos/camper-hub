@@ -12,8 +12,8 @@ pre=sys.argv[1]; rd(0.5)
 for spec in sys.argv[2:]:
     cmds,name=spec.split('|')
     for x in cmds.split(';'):
-        if x: c(x,2.0)
-    rd(1.5); s.reset_input_buffer()
+        if x: c(x,float(__import__("os").environ.get("SHOT_WAIT","2.0")))
+    rd(float(__import__("os").environ.get("SHOT_SETTLE","1.5"))); s.reset_input_buffer()
     s.write(b'shot\n')
     o=b''; e=time.time()+60
     while time.time()<e and b'\nEND' not in o[-50:]: o+=s.read(65536)

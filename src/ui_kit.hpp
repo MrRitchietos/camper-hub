@@ -81,8 +81,15 @@ void drawlist_redraw(lv_obj_t *dl);
 typedef void (*tap_fn)(int row);
 void drawlist_on_tap(lv_obj_t *dl, tap_fn fn);
 void drawlist_on_hold(lv_obj_t *dl, tap_fn fn);   // long press, set after drawlist_on_tap
+void drawlist_tap_from(lv_obj_t *dl, int x);       // only presses right of x (list coords) count, e.g. the value side
+
+// ---- tap guard: a touch is only a tap when the finger stayed put and did not just stop a gliding list
+void tap_track(lv_indev_t *in, bool down, int x, int y);   // from the touch read callback
+bool tap_ok();
+void on_tap(lv_obj_t *o, lv_event_cb_t cb, void *ud = nullptr, lv_event_code_t code = LV_EVENT_CLICKED);
 void dl_text(lv_layer_t *L, const lv_area_t &r, int x, int y, const lv_font_t *f, lv_color_t c, const char *t, bool right = false);
 void dl_dot(lv_layer_t *L, const lv_area_t &r, int x, int y, int w, int h, lv_color_t c);
+void dl_value(lv_layer_t *L, const lv_area_t &r, const char *t, lv_color_t c);   // right side value in a pill: the part you tap
 void dl_icon(lv_layer_t *L, int x, int y, int code, int size);
 
 // pages
@@ -98,6 +105,6 @@ void power_open_key();
 void power_view_test(int i);
 void bank_settings_test(int tap);
 void wifi_picker();
-void web_drain(); void sd_modal_update(); void tools_leave();
+void web_drain(); void sd_modal_update(); void tools_leave(); void tools_keep();
 void look_check(); void look_request();   // request = from an event handler: applied on the next tick
 }  // namespace ui

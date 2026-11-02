@@ -1,4 +1,5 @@
 #include "ui_kit.hpp"
+#include <misc/lv_area_private.h>
 
 namespace ui {
 
@@ -44,6 +45,28 @@ lv_obj_t *card(lv_obj_t *p, int x, int y, int w, int h) {
   lv_obj_set_style_radius(c, 10, 0);
   return c;
 }
+// ---- tap guard
+// LVGL counts a touch as a click when the finger moved less than its scroll limit, and also when the touch
+// only stopped a list that was still gliding after a swipe. Both changed settings by accident while scrolling.
+static lv_point_t t_down;
+static bool t_was_down = false, t_bad = false;
+static uint32_t t_scrolled = 0;
+static constexpr int TAP_SLOP = 8;          // px the finger may wander on a resistive panel
+static constexpr uint32_t TAP_QUIET = 300;  // ms after any scrolling before a touch can be a tap again
+void tap_track(lv_indev_t *in, bool down, int x, int y) {
+  uint32_t now = lv_tick_get();
+  if (lv_indev_get_scroll_obj(in)) t_scrolled = now;                    // a list is moving (finger or glide)
+  if (down && !t_was_down) { t_down = {x, y}; t_bad = now - t_scrolled < TAP_QUIET; }
+  else if (down && (abs(x - t_down.x) > TAP_SLOP || abs(y - t_down.y) > TAP_SLOP)) t_bad = true;
+  t_was_down = down;
+}
+bool tap_ok() { return !t_bad; }
+static void tap_guard(lv_event_t *e) { if (!tap_ok()) lv_event_stop_processing(e); }
+void on_tap(lv_obj_t *o, lv_event_cb_t cb, void *ud, lv_event_code_t code) {
+  lv_obj_add_event_cb(o, tap_guard, code, nullptr);       // runs first, stops the real callback
+  lv_obj_add_event_cb(o, cb, code, ud);
+}
+
 lv_obj_t *button(lv_obj_t *p, const char *txt, int w, int h, lv_color_t bg, lv_event_cb_t cb, void *ud) {
   lv_obj_t *b = lv_button_create(p);
   lv_obj_set_size(b, w, h);
@@ -53,7 +76,7 @@ lv_obj_t *button(lv_obj_t *p, const char *txt, int w, int h, lv_color_t bg, lv_e
   lv_obj_set_style_pad_all(b, 0, 0);
   lv_obj_t *l = label(b, F14, C_WHITE, txt);
   lv_obj_center(l);
-  if (cb) lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, ud);
+  if (cb) on_tap(b, cb, ud);
   return b;
 }
 lv_obj_t *modal(const char *title) {
@@ -185,8 +208,8 @@ Row &pool_row(Pool &p, int i) {
     }
     if (p.cb || p.long_cb) {
       lv_obj_add_flag(r.row, LV_OBJ_FLAG_CLICKABLE);
-      if (p.cb) lv_obj_add_event_cb(r.row, p.cb, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)p.rows.size());
-      if (p.long_cb) lv_obj_add_event_cb(r.row, p.long_cb, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p.rows.size());
+      if (p.cb) on_tap(r.row, p.cb, (void *)(intptr_t)p.rows.size(), LV_EVENT_SHORT_CLICKED);
+      if (p.long_cb) on_tap(r.row, p.long_cb, (void *)(intptr_t)p.rows.size(), LV_EVENT_LONG_PRESSED);
     }
     p.rows.push_back(r);
   }
@@ -294,20 +317,22 @@ static void icon_paint(lv_layer_t *L, const lv_area_t &o, int code, int s) {
   if (k == WK_RAIN) for (int i = 0; i < 3; i++) rrect(L, o, s * (0.26f + i * 0.2f), s * 0.76f, t, s * 0.2f, 2, C_BLUE);
   if (k == WK_SNOW) for (int i = 0; i < 3; i++) circ(L, o, s * (0.24f + i * 0.2f), s * 0.8f, max(3, s / 8), C_WHITE);
   if (k == WK_STORM) {
-    lv_point_precise_t p[] = {{s * 0.56f, s * 0.60f}, {s * 0.42f, s * 0.80f}, {s * 0.54f, s * 0.80f}, {s * 0.44f, s * 0.99f}};
+    auto P = [s](float x, float y) { return lv_point_precise_t{(lv_value_precise_t)(s * x), (lv_value_precise_t)(s * y)}; };
+    lv_point_precise_t p[] = {P(0.56f, 0.60f), P(0.42f, 0.80f), P(0.54f, 0.80f), P(0.44f, 0.99f)};
     lv_draw_line_dsc_t ld; lv_draw_line_dsc_init(&ld);
     ld.color = C_AMBER; ld.width = max(2, s / 12); ld.round_start = ld.round_end = 1;
     for (int i = 0; i < 3; i++) { ld.p1 = {o.x1 + p[i].x, o.y1 + p[i].y}; ld.p2 = {o.x1 + p[i + 1].x, o.y1 + p[i + 1].y}; lv_draw_line(L, &ld); }
   }
 }
 // ---- drawn list
-struct DL { row_fn fn; int row_h, n; lv_obj_t *inner; tap_fn tap; int pressed; tap_fn hold; };
+struct DL { row_fn fn; int row_h, n; lv_obj_t *inner; tap_fn tap; int pressed; tap_fn hold; int x_from; };
 static void dl_draw(lv_event_t *e) {
   lv_obj_t *in = (lv_obj_t *)lv_event_get_target(e);
   DL *d = (DL *)lv_obj_get_user_data(lv_obj_get_parent(in));
   lv_layer_t *L = lv_event_get_layer(e);
   lv_area_t a; lv_obj_get_coords(in, &a);
   lv_area_t clip; lv_obj_get_coords(lv_obj_get_parent(in), &clip);
+  if (!lv_area_intersect(&clip, &clip, &L->_clip_area)) return;   // drawn in strips: only the rows in this one
   for (int i = 0; i < d->n; i++) {
     lv_area_t r = {a.x1, a.y1 + i * d->row_h, a.x2, a.y1 + (i + 1) * d->row_h - 4};
     if (r.y2 < clip.y1 || r.y1 > clip.y2) continue;            // off screen: skip
@@ -325,7 +350,7 @@ lv_obj_t *drawlist(lv_obj_t *p, int x, int y, int w, int h, int row_h, row_fn fn
   lv_obj_set_size(c, w, h);
   lv_obj_set_scroll_dir(c, LV_DIR_VER);
   lv_obj_set_scrollbar_mode(c, LV_SCROLLBAR_MODE_ACTIVE);
-  DL *d = new DL{fn, row_h, 0, nullptr, nullptr, -1, nullptr};
+  DL *d = new DL{fn, row_h, 0, nullptr, nullptr, -1, nullptr, 0};
   lv_obj_set_user_data(c, d);
   lv_obj_add_event_cb(c, dl_free, LV_EVENT_DELETE, nullptr);
   d->inner = lv_obj_create(c);
@@ -344,6 +369,7 @@ static int dl_row_at(lv_obj_t *c) {
   DL *d = (DL *)lv_obj_get_user_data(c);
   lv_point_t p; lv_indev_get_point(lv_indev_active(), &p);
   lv_area_t a; lv_obj_get_coords(d->inner, &a);
+  if (p.x - a.x1 < d->x_from) return -1;                   // outside the tap zone
   int i = (p.y - a.y1) / d->row_h;
   return i >= 0 && i < d->n ? i : -1;
 }
@@ -351,17 +377,16 @@ static void dl_input(lv_event_t *e) {
   lv_obj_t *c = (lv_obj_t *)lv_event_get_current_target(e);
   DL *d = (DL *)lv_obj_get_user_data(c);
   lv_event_code_t code = lv_event_get_code(e);
-  if (code == LV_EVENT_PRESSED) { d->pressed = dl_row_at(c); lv_obj_invalidate(d->inner); }
+  if (code == LV_EVENT_PRESSED) { d->pressed = tap_ok() ? dl_row_at(c) : -1; lv_obj_invalidate(d->inner); }
+  else if (code == LV_EVENT_PRESSING) { if (d->pressed >= 0 && !tap_ok()) { d->pressed = -1; lv_obj_invalidate(d->inner); } }
   else if (code == LV_EVENT_PRESS_LOST || code == LV_EVENT_SCROLL_BEGIN) { d->pressed = -1; lv_obj_invalidate(d->inner); }
-  else if (code == LV_EVENT_LONG_PRESSED) {
-    int i = dl_row_at(c);
+  else if (code == LV_EVENT_LONG_PRESSED || code == LV_EVENT_SHORT_CLICKED) {
+    int was = d->pressed, i = dl_row_at(c);                 // same row as the press, finger stayed put
     d->pressed = -1; lv_obj_invalidate(d->inner);
-    if (i >= 0 && d->hold) d->hold(i);
-  }
-  else if (code == LV_EVENT_SHORT_CLICKED) {
-    int i = dl_row_at(c);
-    d->pressed = -1; lv_obj_invalidate(d->inner);
-    if (i >= 0 && i == dl_row_at(c) && d->tap) d->tap(i);
+    if (i < 0 || i != was || !tap_ok()) return;
+    tap_fn f = code == LV_EVENT_LONG_PRESSED ? d->hold : d->tap;
+    Serial.printf("list %s %d\n", code == LV_EVENT_LONG_PRESSED ? "hold" : "tap", i);
+    if (f) f(i);
   }
 }
 void drawlist_on_tap(lv_obj_t *c, tap_fn fn) {
@@ -371,6 +396,7 @@ void drawlist_on_tap(lv_obj_t *c, tap_fn fn) {
   lv_obj_add_event_cb(c, dl_input, LV_EVENT_ALL, nullptr);
 }
 void drawlist_on_hold(lv_obj_t *c, tap_fn fn) { ((DL *)lv_obj_get_user_data(c))->hold = fn; }   // after drawlist_on_tap
+void drawlist_tap_from(lv_obj_t *c, int x) { ((DL *)lv_obj_get_user_data(c))->x_from = x; }
 void drawlist_redraw(lv_obj_t *c) { lv_obj_invalidate(((DL *)lv_obj_get_user_data(c))->inner); }
 void dl_text(lv_layer_t *L, const lv_area_t &r, int x, int y, const lv_font_t *f, lv_color_t c, const char *t, bool right) {
   lv_draw_label_dsc_t d; lv_draw_label_dsc_init(&d);
@@ -379,6 +405,15 @@ void dl_text(lv_layer_t *L, const lv_area_t &r, int x, int y, const lv_font_t *f
   lv_area_t a = right ? lv_area_t{r.x1, r.y1 + y, r.x2 - x, r.y1 + y + lv_font_get_line_height(f)}
                       : lv_area_t{r.x1 + x, r.y1 + y, r.x2 - 4, r.y1 + y + lv_font_get_line_height(f)};
   lv_draw_label(L, &d, &a);
+}
+void dl_value(lv_layer_t *L, const lv_area_t &r, const char *t, lv_color_t c) {
+  lv_point_t sz; lv_text_get_size(&sz, t, F14, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+  lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
+  d.bg_color = C_BG; d.bg_opa = LV_OPA_50; d.radius = 11;
+  d.border_color = c; d.border_opa = LV_OPA_40; d.border_width = 1;
+  lv_area_t a = {(int32_t)(r.x2 - 24 - sz.x), r.y1 + 3, r.x2 - 4, r.y2 - 3};
+  lv_draw_rect(L, &d, &a);
+  dl_text(L, r, 14, 6, F14, c, t, true);
 }
 void dl_dot(lv_layer_t *L, const lv_area_t &r, int x, int y, int w, int h, lv_color_t c) {
   lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);

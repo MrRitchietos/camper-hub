@@ -62,7 +62,7 @@ void home_build(lv_obj_t *t) {
   m_wx = mini(t, 2, "WEATHER", C_AMBER);
   auto go = [](lv_obj_t *c, int tab) {
     lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(c, [](lv_event_t *e) { goto_tab((int)(intptr_t)lv_event_get_user_data(e)); }, LV_EVENT_CLICKED, (void *)(intptr_t)tab);
+    on_tap(c, [](lv_event_t *e) { goto_tab((int)(intptr_t)lv_event_get_user_data(e)); }, (void *)(intptr_t)tab);
   };
   go(bat.card, 1); go(sol.card, 1); go(bank.card, 3); go(m_in.card, 2); go(m_out.card, 2); go(m_wx.card, 2);
   m_wx.icon = lv_obj_create(m_wx.card);

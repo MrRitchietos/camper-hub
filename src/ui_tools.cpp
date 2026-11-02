@@ -13,6 +13,7 @@ static lv_obj_t *items_dl, *items_empty;   // checklist: one drawn list
 static lv_obj_t *set_dl;
 struct SetRow { char title[40], val[40]; lv_color_t c; };
 static SetRow srow[32];
+static constexpr int SET_TAP_X = 150;            // settings lists: only the right half (the value) reacts to a tap
 static Preferences cp;
 static int list_i = 0;                       // 0 leaving, 1 arriving
 static std::vector<String> L[2];
@@ -147,6 +148,12 @@ static void tools_view(int i) {
 }
 void tools_view_test(int i) { if (v_check && lv_obj_is_valid(v_check)) tools_view(i); }
 void tools_leave() { trips_request(false); std::vector<TripDay>().swap(tcopy); tver = UINT32_MAX; }
+// a look change rebuilds the page: come back on the same view and scroll spot instead of the checklist
+static int keep_view = -1, keep_scroll = 0;
+void tools_keep() {
+  keep_view = seg.active;
+  keep_scroll = keep_view == 2 && set_dl && lv_obj_is_valid(set_dl) ? lv_obj_get_scroll_y(set_dl) : 0;
+}
 
 // ---------------------------------------------------------------- trip diary rows
 lv_color_t temp_color(float t);
@@ -345,9 +352,10 @@ void tools_build(lv_obj_t *t) {
   lv_obj_set_pos(v_set, 0, 30);
   set_dl = drawlist(v_set, 4, 0, 312, PAGE_H - 30, 30, [](lv_layer_t *L, const lv_area_t &r, int i) {
     dl_text(L, r, 12, 6, F14, C_WHITE, srow[i].title);
-    dl_text(L, r, 10, 6, F14, srow[i].c, srow[i].val, true);
+    dl_value(L, r, srow[i].val, srow[i].c);
   });
   drawlist_on_tap(set_dl, set_tap);
+  drawlist_tap_from(set_dl, SET_TAP_X);
   show(v_set, false);
 
   v_trip = box(t, 320, PAGE_H - 30, C_BG);
@@ -359,7 +367,10 @@ void tools_build(lv_obj_t *t) {
   lv_obj_set_pos(trip_info, 12, 60);
   show(v_trip, false);
   tver = UINT32_MAX;
+  if (keep_view > 0) tools_view(keep_view);
+  keep_view = -1;
 }
+
 
 static void set_row(int k, const char *title, const char *val, lv_color_t c = C_AMBER) {
   strlcpy(srow[k].title, title, sizeof srow[k].title);
@@ -370,9 +381,14 @@ static void set_row(int k, const char *title, const char *val, lv_color_t c = C_
 void tools_update(bool force) {
   static uint32_t last = 0;
   if (!force && !dirty && millis() - last < 1000) return;
+  bool redo = force || dirty;
   last = millis(); dirty = false;
-  if (seg.active == 0) {
+  if (seg.active == 0) {                       // edits set dirty; the 1 s tick only repaints when something changed
     auto &v = L[list_i];
+    static uint32_t sig = 0;
+    uint32_t ns = done_mask[list_i] * 31u + v.size() * 7u + list_i;
+    if (!redo && ns == sig) return;
+    sig = ns;
     int done = 0;
     for (int i = 0; i < (int)v.size() && i < 32; i++) done += done_mask[list_i] >> i & 1;
     drawlist_count(items_dl, v.size());
@@ -433,7 +449,14 @@ void tools_update(bool force) {
   set_row(S_UPD, LV_SYMBOL_DOWNLOAD "  Update", ota_msg[0] ? ota_msg : "check now", C_DIM);
   snprintf(b, sizeof b, "%u KB free", (unsigned)(ESP.getFreeHeap() / 1024));
   set_row(S_INFO, LV_SYMBOL_SETTINGS "  Camper hub " FW_VERSION, b, C_DIM);
-  drawlist_count(set_dl, S_N);
+  uint32_t h = 2166136261u;                   // repaint only when a value changed (free memory ticks often, not every second)
+  for (int k = 0; k < S_N; k++) {
+    for (const char *p = srow[k].val; *p; p++) h = (h ^ (uint8_t)*p) * 16777619u;
+    h = (h ^ lv_color_to_u32(srow[k].c)) * 16777619u;
+  }
+  static uint32_t set_sig = 0;
+  if (redo || h != set_sig) { set_sig = h; drawlist_count(set_dl, S_N); }
+  if (keep_scroll > 0) { lv_obj_update_layout(set_dl); lv_obj_scroll_to_y(set_dl, keep_scroll, LV_ANIM_OFF); keep_scroll = 0; }
 }
 
 // ---------------------------------------------------------------- wifi picker

@@ -306,9 +306,16 @@ static void bs_fmt(char *o, size_t n, int i, int v) {
     case 4: snprintf(o, n, "%d %%", v / 10); break;
   }
 }
+static bool forget_on = false;                 // first tap on Forget; a second one within 4 s confirms
+static uint32_t forget_at = 0;
+static bool forget_armed() { return forget_on && lv_tick_elaps(forget_at) < 4000; }
 static void bs_row(lv_layer_t *L, const lv_area_t &r, int i) {
   char b[32];
-  if (i == BS_N + 1) { dl_text(L, r, 12, 6, F14, C_RED, LV_SYMBOL_TRASH "  Forget this power bank"); return; }
+  if (i == BS_N + 1) {
+    dl_text(L, r, 12, 6, F14, C_WHITE, LV_SYMBOL_TRASH "  This power bank");
+    dl_value(L, r, forget_armed() ? "tap again to forget" : "forget", C_RED);
+    return;
+  }
   if (i == BS_N) {
     snprintf(b, sizeof b, "AC charge knob: %d W", kb.s_aclvl * 200);
     dl_text(L, r, 12, 6, F14, C_DIM, b);
@@ -318,10 +325,13 @@ static void bs_row(lv_layer_t *L, const lv_area_t &r, int i) {
   dl_text(L, r, 12, 6, F14, C_WHITE, BS[i].name);
   if (!kb.s_ok) { dl_text(L, r, 10, 8, F12, C_FAINT, "reading...", true); return; }
   bs_fmt(b, sizeof b, i, bs_cur(i));
-  dl_text(L, r, 10, 6, F14, C_PURPLE, b, true);
+  dl_value(L, r, b, C_PURPLE);
 }
 static void bs_tap(int i) {
-  if (i == BS_N + 1) { bank_forget(); close_modal(); toast("Forgotten: the next power bank close by is paired"); return; }
+  if (i == BS_N + 1) {                         // two taps: forgetting means pairing again
+    if (!forget_armed()) { forget_on = true; forget_at = lv_tick_get(); drawlist_redraw(bs_list); return; }
+    forget_on = false; bank_forget(); close_modal(); toast("Forgotten: the next power bank close by is paired"); return;
+  }
   if (i >= BS_N) return;
   { Lock l; kb = S.bank; }
   if (!kb.s_ok) { toast("Still reading the settings..."); return; }
@@ -336,6 +346,7 @@ static void bs_tap(int i) {
 static uint32_t bs_ver = UINT32_MAX;
 void bank_settings_update() {
   if (!g_modal || g_modal != bs_modal) return;
+  if (forget_on && !forget_armed()) { forget_on = false; drawlist_redraw(bs_list); }   // the second tap came too late
   Lock l;
   if (bs_ver == S.bank.ver) return;
   bs_ver = S.bank.ver; kb = S.bank;
@@ -348,6 +359,8 @@ void bank_settings() {
   bs_list = drawlist(m, 4, 34, 312, 204, 30, bs_row);
   drawlist_count(bs_list, BS_N + 2);
   drawlist_on_tap(bs_list, bs_tap);
+  drawlist_tap_from(bs_list, 150);              // only the value side changes a setting
+  forget_on = false;
   bs_ver = UINT32_MAX;
 }
 
