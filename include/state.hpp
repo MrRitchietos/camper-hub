@@ -102,7 +102,8 @@ void request_wifi_scan();
 void connect_to(const char *ssid, const char *pass);
 void set_demo(bool on);
 // victron.cpp
-bool vic_set_key(const char *hex);      // 32 hex chars, "" = forget
+int vic_set_key(const char *hex);       // 32 hex chars: 1 saved, 0 not valid, -1 locked (a key is already stored)
+void vic_forget_key();                  // the only way to unlock: remove the stored key on purpose
 
 void vic_settings(uint8_t batt, int16_t alarm_cv);
 const char *vic_model(uint16_t id);

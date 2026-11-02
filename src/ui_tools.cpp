@@ -296,7 +296,8 @@ void web_drain() {
       } else if (!strcmp(c.key, "edit") && c.text[0] && i >= 0 && i < (int)v.size()) { v[i] = c.text; save_list(k); }
     } else if (!strcmp(c.op, "bank")) bank_switch(clampi(c.a, 0, 3), c.b);
     else if (!strcmp(c.op, "bset")) bank_set(c.a, c.b);
-    else if (!strcmp(c.op, "vkey")) toast(vic_set_key(c.text) ? (c.text[0] ? "Victron key saved" : "Victron key removed") : "Victron key not valid");
+    else if (!strcmp(c.op, "vkey")) { if (!strcmp(c.key, "remove")) { vic_forget_key(); toast("Victron key removed"); }
+                                    else { int r = vic_set_key(c.text); toast(r > 0 ? "Victron key saved" : r < 0 ? "Victron key is locked" : "Victron key not valid"); } }
     else if (!strcmp(c.op, "place")) {
       Place p; bool ok = false;
       { Lock l; if (!strcmp(c.key, "hit") && c.a >= 0 && c.a < P.n_hits) { p = P.hits[c.a]; ok = true; }
@@ -410,7 +411,7 @@ void tools_update(bool force) {
     set_row(S_WEB, LV_SYMBOL_EYE_OPEN "  Phone page", ip, cfg.web ? C_TEAL : C_DIM); }
   set_row(S_PASS, LV_SYMBOL_EDIT "  Phone login", "camper / change", C_DIM);
   set_row(S_AP, LV_SYMBOL_WIFI "  Own WiFi", cfg.ap ? "CamperHub" : "off", cfg.ap ? C_TEAL : C_DIM);
-  set_row(S_KEY, LV_SYMBOL_CHARGE "  Victron key", S.vic.have_key ? "set" : "enter", S.vic.have_key ? C_GREEN : C_AMBER);
+  set_row(S_KEY, LV_SYMBOL_CHARGE "  Victron key", S.vic.have_key ? "locked" : "enter", S.vic.have_key ? C_GREEN : C_AMBER);
   set_row(S_BATT, LV_SYMBOL_BATTERY_FULL "  Battery type", BT[S.vic.batt % 3]);
   if (S.vic.alarm_cv) snprintf(b, sizeof b, "below %d.%02d V", S.vic.alarm_cv / 100, S.vic.alarm_cv % 100); else strcpy(b, "off");
   set_row(S_ALARM, LV_SYMBOL_WARNING "  Low battery alarm", b);

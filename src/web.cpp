@@ -259,7 +259,7 @@ static void routes() {
   srv->on("/api/bank", HTTP_POST, [] { if (!auth()) return; push("bank", "", arg("o").toInt(), arg("on").toInt()); ok(); });
   srv->on("/api/bankset", HTTP_POST, [] { if (!auth()) return; push("bset", "", arg("r").toInt(), arg("v").toInt()); ok(); });
   srv->on("/api/role", HTTP_POST, [] { if (!auth()) return; String a = arg("a"); if (a.length() < 18) sens_set_role(a.c_str(), arg("r").toInt() % R_COUNT); ok(); });
-  srv->on("/api/vkey", HTTP_POST, [] { if (!auth()) return; push("vkey", "", 0, 0, arg("k").c_str()); ok(); });
+  srv->on("/api/vkey", HTTP_POST, [] { if (!auth()) return; push("vkey", arg("op") == "remove" ? "remove" : "", 0, 0, arg("k").c_str()); ok(); });
   srv->on("/api/place", HTTP_POST, [] {
     if (!auth()) return;
     String q = arg("q"), op = arg("op");

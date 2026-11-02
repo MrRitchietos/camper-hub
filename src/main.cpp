@@ -4,6 +4,7 @@
 #include <lvgl.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <SD.h>
 #include "hw.hpp"
 #include "internal.hpp"
 
@@ -94,14 +95,27 @@ static void sound() {
   beep_step += 2;
 }
 
-// ---- serial console: vic | vkey <hex> | vdemo | vtest | sens | days | ldr | heap
+// ---- serial console: vic | vkey <hex> | vkey remove | ls [dir] | cat <file> | sens | days | ldr | heap
 static void console() {
   static String line;
   while (Serial.available()) {
     char c = Serial.read();
     if (c != '\n') { if (c != '\r') line += c; continue; }
     String cmd = line; line = "";
-    if (cmd.startsWith("vkey ")) Serial.println(vic_set_key(cmd.substring(5).c_str()) ? "ok" : "bad key");
+    if (cmd == "vkey remove") { vic_forget_key(); Serial.println("key removed"); }
+    else if (cmd.startsWith("vkey ")) { int r = vic_set_key(cmd.substring(5).c_str()); Serial.println(r > 0 ? "ok" : r < 0 ? "locked: vkey remove first" : "bad key"); }
+    else if (cmd == "ls" || cmd.startsWith("ls ")) {     // SD listing: ls [/dir]
+      String d = cmd.length() > 3 ? cmd.substring(3) : String("/camper");
+      File dir = SD.open(d);
+      if (!dir) Serial.println("no such dir");
+      else { for (File f = dir.openNextFile(); f; f = dir.openNextFile()) { Serial.printf(" %s %u\n", f.name(), (unsigned)f.size()); f.close(); } dir.close(); }
+      Serial.println("--end--");
+    } else if (cmd.startsWith("cat ")) {                 // SD file dump: cat /camper/events.csv
+      File f = SD.open(cmd.substring(4));
+      if (!f) Serial.println("not found");
+      else { uint8_t b[256]; int n; while ((n = f.read(b, sizeof b)) > 0) { Serial.write(b, n); delay(2); } f.close(); }
+      Serial.println("--end--");
+    }
     else if (cmd == "demo") { set_demo(!demo_on); Serial.printf("demo %d\n", (int)demo_on); }
     else if (cmd == "vic") {
       Lock l; auto &v = S.vic;

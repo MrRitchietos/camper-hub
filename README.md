@@ -63,7 +63,7 @@ Open the board's address in a browser to see everything and change settings, the
 
 ## Devices
 
-* Victron SmartSolar charger over Bluetooth (Instant Readout). Enter its key once: VictronConnect, the charger, gear icon, three dots, Product info, Instant readout details
+* Victron SmartSolar charger over Bluetooth (Instant Readout). Enter its key once: VictronConnect, the charger, gear icon, three dots, Product info, Instant readout details. The key is then locked: a new one is only accepted after you remove the old one on purpose (Settings > Victron key > Remove key)
 * Fossibot F1200 power bank (BrightEMS app protocol)
 * Thermometers: Xiaomi LYWSD03MMC with pvvx firmware, Shelly BLU H&T and other BTHome sensors, RuuviTag. Tap a sensor to set it as inside, outside, fridge or freezer. A fridge or freezer that is too warm, or a sensor that goes quiet, sounds an alarm
 * RuuviTag for the level page
@@ -94,4 +94,4 @@ PlatformIO: `pio run -t upload`. An optional `include/secrets.hpp` can hold a fi
 
 Release builds leave it out: `tools/release.sh 1.2.0`.
 
-The serial console (115200 baud) has a few test commands, for example `demo` (toggle demo mode), `heap`, `tasks` and `shot` (a screenshot in the exact colours the board draws).
+The serial console (115200 baud) has a few test commands, for example `demo` (toggle demo mode), `heap`, `tasks` and `shot` (a screenshot in the exact colours the board draws), plus `ls` and `cat <file>` to read the SD card logs.

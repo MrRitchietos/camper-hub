@@ -37,11 +37,22 @@ void power_view_test(int i) { if (v_live && lv_obj_is_valid(v_live) && i < 3) vi
 static void seg_cb(lv_event_t *e) { view((int)(intptr_t)lv_event_get_user_data(e)); }
 
 static void key_done(const char *k) {
-  if (!vic_set_key(k)) { toast("Key = 32 characters 0-9 / a-f"); return; }
+  int r = vic_set_key(k);
+  if (r < 0) { toast("Key is locked: remove the old one first"); return; }
+  if (r == 0) { toast("Key = 32 characters 0-9 / a-f"); return; }
   if (demo_on) set_demo(false);
   toast("Key saved, listening...");
 }
 void power_open_key() {
+  if (S.vic.have_key) {     // locked: only a deliberate Remove unlocks it
+    lv_obj_t *c = modal(LV_SYMBOL_CHARGE "  Victron key is locked");
+    lv_obj_t *t = label(c, F14, C_WHITE, "The key is stored and cannot be changed by accident. "
+                                         "Only remove it if the charger got a new Bluetooth PIN.");
+    lv_obj_set_width(t, 300); lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP); lv_obj_set_pos(t, 10, 48);
+    lv_obj_set_pos(button(c, "Remove key", 146, 40, C_AMBER, [](lv_event_t *) { vic_forget_key(); close_modal(); toast("Victron key removed"); }), 8, 150);
+    lv_obj_set_pos(button(c, "Keep it", 146, 40, C_CARD2, [](lv_event_t *) { close_modal(); }), 166, 150);
+    return;
+  }
   open_text(LV_SYMBOL_CHARGE "  Victron Instant Readout key", "32 characters from VictronConnect", 47,
             "0123456789abcdefABCDEF -", key_done);
 }

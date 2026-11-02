@@ -43,24 +43,29 @@ static int hexval(char c) {
   return -1;
 }
 
-bool vic_set_key(const char *hex) {
+void vic_forget_key() {
+  vprefs.remove("key"); have_key = false;
+  log_event("Victron key removed");
+  Lock l; clear_live(S.vic); S.vic.have_key = false;
+}
+
+// A stored key is locked: a new one is refused until the old one is removed on purpose
+// (Settings > Victron key > Remove, the phone page Remove button, or serial "vkey remove").
+int vic_set_key(const char *hex) {
+  if (have_key) return -1;
   uint8_t k[16]; int n = 0, hi = -1;
   for (const char *p = hex; *p; p++) {
     int v = hexval(*p);
-    if (v < 0) { if (*p == ' ' || *p == '-' || *p == ':') continue; return false; }
-    if (hi < 0) hi = v; else { if (n >= 16) return false; k[n++] = hi << 4 | v; hi = -1; }
+    if (v < 0) { if (*p == ' ' || *p == '-' || *p == ':') continue; return 0; }
+    if (hi < 0) hi = v; else { if (n >= 16) return 0; k[n++] = hi << 4 | v; hi = -1; }
   }
-  if (n == 0 && hi < 0) {
-    vprefs.remove("key"); have_key = false;
-    Lock l; clear_live(S.vic); S.vic.have_key = false;
-    return true;
-  }
-  if (n != 16 || hi >= 0) return false;
+  if (n != 16 || hi >= 0) return 0;
   memcpy(key, k, 16);
   vprefs.putBytes("key", key, 16);
   have_key = true;
+  log_event("Victron key saved");
   Lock l; S.vic.have_key = true; S.vic.decoded = false; S.vic.key_bad = false; S.vic.ver++;
-  return true;
+  return 1;
 }
 
 struct Bits {            // little-endian bit reader over the decrypted record
