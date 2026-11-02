@@ -41,7 +41,12 @@ bool ota_wanted() { Preferences p; p.begin("ota", true); bool w = p.getBool("now
 // main.cpp setup, before anything else: roll back a new version that does not stay up
 void ota_boot_guard() {
   Preferences p; p.begin("ota", false);
-  { char m[48]; size_t n = p.getString("msg", m, sizeof m); if (n) { strlcpy(ota_msg, m, sizeof ota_msg); } }
+  {                       // a message naming another version is stale (e.g. after a USB flash): show "check now"
+    char m[48]; size_t n = p.getString("msg", m, sizeof m);
+    const char *v = n ? strpbrk(m, "0123456789") : nullptr;
+    if (v && strncmp(v, FW_VERSION, strlen(FW_VERSION))) { p.remove("msg"); n = 0; }
+    if (n) strlcpy(ota_msg, m, sizeof ota_msg);
+  }
   // only for the version GitHub just installed (a USB flash runs elsewhere) and only real crashes count
   const esp_partition_t *run = esp_ota_get_running_partition();
   char part[17] = ""; p.getString("part", part, sizeof part);
