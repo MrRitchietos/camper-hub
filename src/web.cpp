@@ -152,7 +152,7 @@ static void api_state() {
       }
     }
     JsonObject lv = d["lvl"].to<JsonObject>();
-    lv["ok"] = S.lvl_present; j_num(lv, "p", S.pitch, 2); j_num(lv, "r", S.roll, 2); lv["cal"] = S.lvl_cal;
+    lv["ok"] = S.lvl_present; j_num(lv, "p", S.pitch, 2); j_num(lv, "r", S.roll, 2); lv["cal"] = S.lvl_cal; lv["moved"] = S.lvl_moved;
     JsonObject st = d["set"].to<JsonObject>();
     st["bright"] = cfg.bright; st["beep"] = cfg.beep; st["saver"] = cfg.saver; st["scroff"] = cfg.scr_off; st["look"] = cfg.saver_look; st["thm"] = cfg.look_mode;
     st["wb"] = cfg.len_cm; st["trk"] = cfg.width_cm; st["rot"] = cfg.lvl_rot; st["batt"] = v.batt; st["alarm"] = v.alarm_cv;

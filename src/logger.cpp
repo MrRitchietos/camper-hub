@@ -131,7 +131,8 @@ void clock_set(long e, uint8_t src) {
   if (src != CLK_NET) { timeval tv{(time_t)e, 0}; settimeofday(&tv, nullptr); }
   { Lock l; S.clock_ok = true; S.clock_est = false; S.clock_src = src; }
   clock_dirty = true;
-  if (cur < CLK_HAND || labs(d) > 90) log_event("clock %s (moved %+ld min)", clock_src_name(src), d / 60);
+  if (cur == CLK_NONE) log_event("clock %s", clock_src_name(src));
+  else if (cur < CLK_HAND || labs(d) > 90) log_event("clock %s (moved %+ld min)", clock_src_name(src), d / 60);
 }
 static void restore_clock() {
   if (time(nullptr) > 1700000000) return;

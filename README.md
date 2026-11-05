@@ -41,7 +41,9 @@ The screenshots are taken from the board in demo mode (Tools > Settings > Demo),
 2. Turn the camper around with the wheels on the same spots and measure again. The slope of the ground flips with the van, the error of the tag does not, so no level ground is needed. On ground you know is level, skip this step.
 3. Raise only the front a bit (front wheels on the ramps) and measure. This tells the board where the front is. Skip it to use the arrow direction from Settings.
 
-Each step waits until the van stands still and averages the readings. A median filter removes single spikes, so the bubble stays calm while you sit inside but follows quickly when you drive onto the ramps.
+Each step uses only the readings taken after you tap Measure (10 of them) and starts again when the van moves. Moving the tag later shows "Tag moved? Calibrate".
+
+How fast it updates: the standard RuuviTag firmware measures every 2.57 s (each value is sent twice). The screen shows every new value at once and jumps straight to a new position, and the small arrow in the corner lights up at each reading. While the Level page is open the board listens to Bluetooth 90 % of the time, so no reading is missed. For real time levelling, install Ruuvi's official test firmware (a new value every 0.44 s): it uses more battery.
 
 **Tools.** Checklists for leaving and arriving (tap to tick, hold to remove), the trip diary with one line per day, and all settings.
 

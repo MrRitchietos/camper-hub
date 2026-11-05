@@ -238,6 +238,17 @@ static void task(void *) {
     bool want_pause = low_mem || (ble_pause_until && (int32_t)(ble_pause_until - millis()) > 0);
     if (!ble_off && want_pause && !ble_paused) { ble_paused = true; NimBLEDevice::getScan()->stop(); }
     if (!ble_off && !want_pause && ble_paused) { ble_paused = false; if (!low_mem) ble_pause_until = 0; ble_cb.restart = true; }
+    {                                                  // Level page open: scan 90 % of the time (no level reading missed)
+      extern volatile uint32_t level_open_at;
+      static bool full = false;
+      bool want = level_open_at && millis() - level_open_at < 3000;
+      if (!ble_off && want != full) {
+        full = want; NimBLEScan *sc = NimBLEDevice::getScan();
+        if (!ble_paused) sc->stop();
+        sc->setWindow(full ? 90 : 45);
+        if (!ble_paused) ble_cb.restart = true;
+      }
+    }
     if (!ble_off && !ble_paused && ble_cb.restart) { ble_cb.restart = false; NimBLEDevice::getScan()->start(0, false, true); }
     if (now - last_tick >= 1000) { last_tick = now; vic_tick(); sens_tick(); }
     if (!ble_off) bank_service();

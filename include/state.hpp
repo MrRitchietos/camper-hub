@@ -88,7 +88,8 @@ struct State {
   Bank bank;
   bool lvl_present = false; float pitch = 0, roll = 0;     // degrees, + = front up / right up
   char lvl_tag[18] = "";                                   // RuuviTag used for the level
-  uint8_t lvl_cal = 0;                                     // 0 not calibrated, 1 level only, 2 level + front
+  uint8_t lvl_cal = 0;
+  uint16_t lvl_n = 0; uint32_t lvl_gap = 0; bool lvl_moved = false;   // moved = the tag itself was turned: calibrate again                // new level readings so far, ms between them                                     // 0 not calibrated, 1 level only, 2 level + front
   bool demo = false;
 };
 
@@ -120,7 +121,7 @@ bool level_begin();
 void level_poll();                      // UI loop while the Level tab is open
 void level_next_tag();
 void level_cal_start();                 // calibration steps, see level.cpp
-int level_measure(int step);             // 0 ok, 1 not enough samples yet, 2 moving, 3 front not raised enough
+int level_measure(int step, uint32_t since);   // readings since millis() 'since': 0 ok, 1 not enough yet, 2 moving, 3 front not raised enough
 void level_cal_skip(int step);
 void level_cal_save();
 void level_cal_clear();

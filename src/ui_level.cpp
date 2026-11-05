@@ -3,14 +3,14 @@
 
 namespace ui {
 
-static lv_obj_t *ring, *bubble, *pitch_l, *roll_l, *verdict, *missing, *van;
+static lv_obj_t *ring, *bubble, *pitch_l, *roll_l, *verdict, *missing, *van, *live_l;
 static lv_obj_t *corner[4];
 static constexpr int R = 70, BUB = 24;
 
 // ---- calibration wizard: 3 steps, each one waits until the camper stands still (see level.cpp)
 static lv_obj_t *cal_m, *cal_t, *cal_s, *cal_skip, *cal_go;
 static lv_timer_t *cal_tm = nullptr;
-static int cal_step = 0; static uint32_t cal_until = 0; static int cal_last = 0;
+static int cal_step = 0; static uint32_t cal_until = 0, cal_since = 0; static int cal_last = 0;
 static const char *CAL_TXT[] = {
   "Park where you want to level, hand brake on, everyone sits still.\n\nTap Measure.",
   "Turn the camper around and park with the wheels on the same spots (front where the back was).\n\n"
@@ -24,12 +24,20 @@ static void cal_show() {
   show(cal_skip, cal_step > 0);
   lv_obj_remove_state(cal_go, LV_STATE_DISABLED);
 }
-static void cal_done() { level_cal_save(); close_modal(); toast("Level calibrated"); }
+static void cal_done() {
+  level_cal_save(); close_modal();
+  float p; uint8_t c; { Lock l; p = S.pitch; c = S.lvl_cal; }
+  char b[80];
+  if (c == 2) snprintf(b, sizeof b, "Calibrated. Front now %+.1f\xC2\xB0 (should be + while the front is up)", p);
+  else snprintf(b, sizeof b, "Level calibrated");
+  toast(b);
+}
 static void cal_next() { Serial.printf("cal step %d done\n", cal_step + 1); if (cal_step < 2) { cal_step++; cal_show(); } else cal_done(); }
 static void cal_tick(lv_timer_t *tm) {
   if (!cal_m) { lv_timer_delete(tm); cal_tm = nullptr; return; }
   if (!cal_until) return;
-  int r = level_measure(cal_step);
+  int r = level_measure(cal_step, cal_since);
+  if (r == 2) cal_since = millis();                     // moved: start the readings again from now
   static int last_r = -1; if (r != last_r) { last_r = r; Serial.printf("cal step %d measure %d\n", cal_step + 1, r); }
   if (r == 0) { cal_until = 0; beep(1); cal_next(); return; }
   if (r != 1) cal_last = r;
@@ -40,7 +48,7 @@ static void cal_tick(lv_timer_t *tm) {
     set_col(cal_s, C_AMBER);
     return;
   }
-  set_txt(cal_s, r == 2 ? "Waiting until the camper stands still..." : "Measuring, hold still...");
+  set_txt(cal_s, r == 2 ? "Camper moved: starting again, hold still..." : "Measuring, hold still (about 25 s)...");
 }
 static void open_cal() {
   bool present; { Lock l; present = S.lvl_present && strcmp(S.lvl_tag, "demo"); }
@@ -57,7 +65,7 @@ static void open_cal() {
   lv_obj_set_pos(cal_skip, 10, 200);
   cal_go = button(m, "Measure", 190, 32, C_TEAL, [](lv_event_t *) {
     if (cal_until) return;
-    cal_until = millis() + 45000; cal_last = 0; lv_obj_add_state(cal_go, LV_STATE_DISABLED); set_txt(cal_s, "Measuring, hold still..."); });
+    cal_until = millis() + 90000; cal_since = millis(); cal_last = 0; lv_obj_add_state(cal_go, LV_STATE_DISABLED); set_txt(cal_s, "Measuring, hold still..."); });
   lv_obj_set_pos(cal_go, 120, 200);
   cal_show();
   if (!cal_tm) cal_tm = lv_timer_create(cal_tick, 500, nullptr);
@@ -88,6 +96,8 @@ void level_build(lv_obj_t *t) {
   lv_obj_center(bubble);
   lv_obj_t *f = label(c, F12, C_FAINT, LV_SYMBOL_UP " front");
   lv_obj_align(f, LV_ALIGN_TOP_LEFT, 6, 2);
+  live_l = label(c, F12, C_FAINT, "");                 // lights up at every new reading from the tag
+  lv_obj_align(live_l, LV_ALIGN_TOP_RIGHT, -6, 2);
   verdict = label(c, F14, C_WHITE, "");
   lv_obj_align(verdict, LV_ALIGN_BOTTOM_MID, 0, -6);
 
@@ -137,6 +147,15 @@ void level_update() {
   { Lock l; p = S.pitch; r = S.roll; present = S.lvl_present; }
   show(missing, !present);
   if (!present) return;
+  {
+    static uint16_t seen_n = 0; static uint32_t lit_at = 0;
+    uint16_t n; uint32_t gap; bool demo; { Lock l; n = S.lvl_n; gap = S.lvl_gap; demo = !strcmp(S.lvl_tag, "demo"); }
+    if (n != seen_n) { seen_n = n; lit_at = millis(); }
+    bool lit = millis() - lit_at < 400;
+    if (demo) set_txt(live_l, "");
+    else if (gap) set_fmt(live_l, LV_SYMBOL_REFRESH " %.1f s", gap / 1000.0f);
+    set_col(live_l, lit ? C_TEAL : C_FAINT);
+  }
   float m = max(fabsf(p), fabsf(r));
   lv_color_t c = m < 0.5f ? C_GREEN : m < 1.5f ? C_AMBER : C_RED;
   // the bubble floats to the HIGH side, full ring = 3 degrees
@@ -152,7 +171,9 @@ void level_update() {
   set_col(roll_l, fabsf(r) < 0.5f ? C_GREEN : C_WHITE);
   uint8_t cal; { Lock l; cal = S.lvl_cal; }
   bool demo; { Lock l; demo = !strcmp(S.lvl_tag, "demo"); }
+  bool moved; { Lock l; moved = S.lvl_moved; }
   if (!cal && !demo) { set_txt(verdict, "Tap Calibrate first"); set_col(verdict, C_AMBER); }
+  else if (moved && !demo) { set_txt(verdict, "Tag moved? Calibrate"); set_col(verdict, C_AMBER); }
   else { set_txt(verdict, m < 0.5f ? LV_SYMBOL_OK "  Level" : m < 1.5f ? "Almost level" : "Not level"); set_col(verdict, c); }
   // corner heights: + front / + right; raise every corner up to the highest one
   float L = cfg.len_cm, Wd = cfg.width_cm, tp = tanf(p / 57.2958f), tr = tanf(r / 57.2958f);
