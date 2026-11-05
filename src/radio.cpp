@@ -196,7 +196,7 @@ static void ble_begin() {
   sc->start(0, false, true);
 }
 
-static void sntp_cb(struct timeval *) { ntp_synced = true; Lock l; S.clock_ok = true; S.clock_est = false; }
+static void sntp_cb(struct timeval *tv) { ntp_synced = true; clock_set(tv ? (long)tv->tv_sec : (long)time(nullptr), CLK_NET); }
 
 // ---------------------------------------------------------------- main radio task
 static void task(void *) {

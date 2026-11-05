@@ -32,6 +32,8 @@ static void status_build(lv_obj_t *scr) {
   lv_obj_align(clock_l, LV_ALIGN_LEFT_MID, 8, 0);
   date_l = label(b, F12, C_DIM, "");
   lv_obj_align_to(date_l, clock_l, LV_ALIGN_OUT_RIGHT_MID, 8, 1);
+  lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);         // clock not sure: tap the bar to set it
+  on_tap(b, [](lv_event_t *) { uint8_t s; { Lock l; s = S.clock_src; } if (s <= CLK_SD) open_clock(); });
   i_sd = label(b, F14, C_FAINT, LV_SYMBOL_SD_CARD);
   lv_obj_align(i_sd, LV_ALIGN_RIGHT_MID, -8, 0);
   i_bt = label(b, F14, C_FAINT, LV_SYMBOL_BLUETOOTH);
@@ -53,9 +55,10 @@ static void status_update() {
   if (ok) {
     localtime_r(&now, &t);
     set_fmt(clock_l, "%02d:%02d", t.tm_hour, t.tm_min);
-    set_fmt(date_l, "%s %d %s%s", WD[t.tm_wday], t.tm_mday, MO[t.tm_mon], est ? "  (clock from SD)" : "");
-    lv_obj_align_to(date_l, clock_l, LV_ALIGN_OUT_RIGHT_MID, 8, 1);
-  }
+    set_fmt(date_l, "%s %d %s%s", WD[t.tm_wday], t.tm_mday, MO[t.tm_mon], est ? "  time? tap" : "");
+  } else set_txt(date_l, "tap to set the clock");
+  set_col(date_l, ok && !est ? C_DIM : C_AMBER);
+  lv_obj_align_to(date_l, clock_l, LV_ALIGN_OUT_RIGHT_MID, 8, 1);
   Lock l;
   set_col(i_wifi, !S.wifi ? C_FAINT : S.portal ? C_AMBER : S.online ? C_TEAL : C_DIM);
   static bool portal_told = false;

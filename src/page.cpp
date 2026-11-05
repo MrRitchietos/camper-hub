@@ -24,7 +24,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}td{padding:6px 4px;bord
 </style></head><body>
 <header><h1>Camper hub <small id="clk"></small></h1><nav id="nav"></nav></header><main id="main"></main><div id="toast"></div>
 <script>
-const TABS=['Live','Bank','Weather','Level','Lists','Trips','Settings','Files'];let tab=localStorage.tab||'Live',S=null,L=null,busy=false;
+const TABS=['Live','Bank','Weather','Level','Lists','Trips','Settings','Files'];let tab=localStorage.tab||'Live',S=null,L=null,busy=false,tsync=0;
+async function setClock(){if(S&&S.cs>=4){toast('The board already has the exact time ('+S.csn+')');return}await post('/api/time',{t:Math.round(Date.now()/1000)});toast('Board clock set from this phone')}
 const $=s=>document.querySelector(s),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2200)}
 async function post(u,p){const r=await fetch(u,{method:'POST',headers:{'X-Camper':'1'},body:new URLSearchParams(p)});if(!r.ok)toast('Failed: '+await r.text());setTimeout(load,400);return r.ok}
@@ -32,7 +33,7 @@ const WX=c=>c==0?'Clear':c<=2?'Partly cloudy':c==3?'Cloudy':c<50?'Fog':c<60?'Dri
 const n=(v,d=1,u='')=>v==null?'--':(+v).toFixed(d)+u;
 function nav(){$('#nav').innerHTML=TABS.map(t=>`<button class="${t==tab?'on':''}" onclick="go('${t}')">${t}</button>`).join('')}
 function go(t){tab=t;localStorage.tab=t;nav();render(true)}
-async function load(){if(busy)return;busy=true;try{const r=await fetch('/api/state');S=await r.json();$('#clk').textContent=(S.demo?'DEMO  ':'')+(S.time||'');render(false)}catch(e){$('#clk').textContent='offline'}busy=false}
+async function load(){if(busy)return;busy=true;try{const r=await fetch('/api/state');S=await r.json();if(!tsync&&S.cs<4&&(!S.now||Math.abs(Date.now()/1000-S.now)>60)){tsync=1;setClock()}$('#clk').textContent=(S.demo?'DEMO  ':'')+(S.time||'');render(false)}catch(e){$('#clk').textContent='offline'}busy=false}
 function sel(k,v,opts){return `<select onchange="post('/api/set',{k:'${k}',v:this.value})">${opts.map(([a,b])=>`<option value="${a}"${a==v?' selected':''}>${b}</option>`).join('')}</select>`}
 function roleSel(s){return `<select onchange="post('/api/role',{a:'${s.a}',r:this.value})">${['(not named)','Inside','Outside','Fridge','Freezer','Other'].map((b,a)=>`<option value="${a}"${a==s.r?' selected':''}>${b}</option>`).join('')}</select>`}
 const R=['Sensor','Inside','Outside','Fridge','Freezer','Other'];
@@ -63,11 +64,11 @@ if(p.busy)h+='<div class="dim">Searching...</div>';else if(p.err)h+=`<div class=
 p.hits.forEach((x,i)=>h+=`<div class="row"><span>${E(x.n)} <span class="dim">${E(x.a)}</span></span><button class="b" onclick="post('/api/place',{op:'hit',i:${i}})">Use</button></div>`);
 if(p.recent.length)h+='<div class="dim" style="margin-top:8px">Used before:</div>';p.recent.forEach((x,i)=>h+=`<div class="row"><span>${E(x.n)} <span class="dim">${E(x.a)}</span></span><button class="b" onclick="post('/api/place',{op:'recent',i:${i}})">Use</button></div>`);
 return h+`<div class="row"><span class="dim">Auto = from the internet connection (often wrong on campsite WiFi)</span><button class="b" onclick="post('/api/place',{op:'auto'})">Auto</button></div></div>`}
-function level(){const l=S.lvl,s=S.set;if(!l.ok)return '<div class="card">No RuuviTag heard. Lay the tag flat in the camper, arrow to the front.</div>';
+function level(){const l=S.lvl,s=S.set;if(!l.ok)return '<div class="card">No RuuviTag heard. Fix the tag anywhere in the camper where it cannot move, then calibrate it on the screen.</div>';
 const f=Math.tan(l.p*Math.PI/180)*s.wb,r=Math.tan(l.r*Math.PI/180)*s.trk;let a=[];
 if(Math.abs(f)>=1)a.push(f>0?`raise the <b>rear</b> by ${Math.abs(f).toFixed(0)} cm`:`raise the <b>front</b> by ${Math.abs(f).toFixed(0)} cm`);
 if(Math.abs(r)>=1)a.push(r>0?`raise the <b>left</b> side by ${Math.abs(r).toFixed(0)} cm`:`raise the <b>right</b> side by ${Math.abs(r).toFixed(0)} cm`);
-return `<div class="card"><div class="big ${a.length?'warn':'ok'}">${a.length?'Not level':'Level'}</div><div>${a.join('<br>')||'Nothing to do.'}</div><div class="dim" style="margin-top:8px">front/back ${n(l.p,1,'°')} · side ${n(l.r,1,'°')} · wheelbase ${s.wb} cm, track ${s.trk} cm</div></div><div class="card"><div class="row"><span>Parked on flat ground?</span><button class="b" onclick="post('/api/set',{k:'zero',v:1})">Zero here</button></div></div>`}
+return `<div class="card"><div class="big ${a.length?'warn':'ok'}">${a.length?'Not level':'Level'}</div><div>${a.join('<br>')||'Nothing to do.'}</div><div class="dim" style="margin-top:8px">front/back ${n(l.p,1,'°')} · side ${n(l.r,1,'°')} · wheelbase ${s.wb} cm, track ${s.trk} cm</div></div><div class="card">${l.cal?'<span class="ok">Calibrated</span>':'<span class="warn">Not calibrated yet</span>'} <span class="dim">· calibrate on the screen: Level &gt; Calibrate (park, turn around, raise the front)</span></div>`}
 async function lists(force){if(force||!L){L=await (await fetch('/api/lists')).json()}let h='';
 for(const[k,t,i]of[['leave','Leaving',0],['arrive','Arriving',1]]){const it=L[k].items,d=it.filter(x=>x.d).length;
 h+=`<div class="card"><h2 style="margin-top:0;display:flex;justify-content:space-between">${t} <span>${d}/${it.length} <button class="b" onclick="ck('reset',${i},0)">Reset</button></span></h2>`;
@@ -85,7 +86,7 @@ const rows=[['Brightness',sel('bright',s.bright,[[0,'Auto'],[1,'Low'],[2,'Medium
 ['Screen off',sel('scroff',s.scroff,[[0,'never'],[1,'15 min later'],[2,'30 min later'],[3,'60 min later'],[4,'120 min later']])],
 ['Battery type',sel('batt',s.batt,[[0,'AGM / lead'],[1,'Gel'],[2,'LiFePO4']])],['Low battery alarm',sel('alarm',s.alarm,al)],
 ['Wheelbase (cm)',`<input type="number" value="${s.wb}" min="250" max="500" onchange="post('/api/set',{k:'wb',v:this.value})">`],['Track (cm)',`<input type="number" value="${s.trk}" min="120" max="250" onchange="post('/api/set',{k:'trk',v:this.value})">`],
-['Level tag turned',sel('rot',s.rot,[[0,'0°'],[1,'90°'],[2,'180°'],[3,'270°']])],['Own WiFi CamperHub',sel('ap',+s.ap,[[0,'off'],[1,'on']])],['Demo mode',sel('demo',+s.demo,[[0,'off'],[1,'on']])]];
+['Level tag turned',sel('rot',s.rot,[[0,'0°'],[1,'90°'],[2,'180°'],[3,'270°']])],['Clock: '+E(S.csn),'<button class="b" onclick="setClock()">Set from this phone</button>'],['Own WiFi CamperHub',sel('ap',+s.ap,[[0,'off'],[1,'on']])],['Demo mode',sel('demo',+s.demo,[[0,'off'],[1,'on']])]];
 let h='<div class="card">'+rows.map(([a,b])=>`<div class="row"><span>${a}</span>${b}</div>`).join('')+'</div>';
 h+=S.vic.key?`<div class="card"><h2 style="margin-top:0">Victron key <span class="ok">locked</span></h2><div class="dim">Stored on the board and cannot be changed by accident. Only remove it if the charger got a new Bluetooth PIN.</div><div class="row"><span></span><button class="b" onclick="confirm('Remove the Victron key? Solar data stops until you enter a new one.')&&post('/api/vkey',{op:'remove'})">Remove key</button></div></div>`
 :`<div class="card"><h2 style="margin-top:0">Victron key <span class="warn">missing</span></h2><div class="dim">VictronConnect > charger > ⚙ > ⋮ > Product info > Instant readout > Show</div><div class="row"><input id="vk" placeholder="32 characters" style="max-width:none;flex:1" autocomplete="off"><button class="b t" onclick="post('/api/vkey',{k:$('#vk').value.replace(/\\s/g,'')});$('#vk').value=''">Save</button></div></div>`;

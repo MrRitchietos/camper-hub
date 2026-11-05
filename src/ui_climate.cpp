@@ -268,10 +268,20 @@ void climate_update(bool force) {
     set_bg(r.dot, role_color(s.role));
     if (s.role == R_NONE) set_fmt(r.title, "%s sensor  (tap to name)", s.kind); else set_txt(r.title, role_name(s.role));
     set_col(r.title, s.role == R_NONE ? C_DIM : C_WHITE);
-    char bat[16] = ""; if (s.batt >= 0) snprintf(bat, sizeof bat, "   batt %d%%", s.batt);
+    char bat[40] = ""; if (s.batt >= 0) snprintf(bat, sizeof bat, "   batt %d%%", s.batt);
+    // inside: dew point, and a warning when it is damp or the windows will mist (window inside colder than the dew point)
+    const char *damp = nullptr; char dampb[48];
+    if (s.role == R_INSIDE && !isnan(s.t) && !isnan(s.h) && s.h > 1) {
+      float g = logf(s.h / 100) + 17.62f * s.t / (243.12f + s.t), dew = 243.12f * g / (17.62f - g);
+      float out = NAN; { const Sensor *o = sens_by_role(R_OUTSIDE); if (o) out = o->t; else if (S.wx.ok) out = S.wx.t; }
+      if (s.h >= 70) { snprintf(dampb, sizeof dampb, "damp (%d%%): air the camper", (int)(s.h + 0.5f)); damp = dampb; }
+      // the inside of a camper window is about 60 % of the way from the outside to the inside temperature
+      else if (!isnan(out) && out + 0.6f * (s.t - out) <= dew) { snprintf(dampb, sizeof dampb, "windows will mist (dew point %.0f\xC2\xB0)", dew); damp = dampb; }
+      else { char b2[40]; snprintf(b2, sizeof b2, "   dew %.0f\xC2\xB0%s", dew, bat); strlcpy(bat, b2, sizeof bat); }
+    }
     uint32_t age = (millis() - s.seen) / 1000;
     if (age > 300) set_fmt(r.sub, "not heard for %u min%s", (unsigned)(age / 60), bat);
-    else if (!isnan(s.tmin)) set_fmt(r.sub, LV_SYMBOL_DOWN " %.1f\xC2\xB0  " LV_SYMBOL_UP " %.1f\xC2\xB0 today%s", s.tmin, s.tmax, bat);
+    else if (!isnan(s.tmin)) set_fmt(r.sub, LV_SYMBOL_DOWN " %.1f\xC2\xB0  " LV_SYMBOL_UP " %.1f\xC2\xB0%s%s", s.tmin, s.tmax, strstr(bat, "dew") ? "" : " today", bat);
     else set_txt(r.sub, bat);
     if (!isnan(s.hpa) && age <= 300) {
       float tr = hpa_trend(s);
@@ -279,6 +289,7 @@ void climate_update(bool force) {
       set_fmt(r.sub, "%.0f hPa%s%s%s", s.hpa, arrow, !isnan(tr) && tr <= -4 ? " storm risk" : "", bat);
       set_col(r.sub, !isnan(tr) && tr <= -4 ? C_ORANGE : C_DIM);
     } else set_col(r.sub, C_DIM);
+    if (damp && age <= 300) { set_txt(r.sub, damp); set_col(r.sub, C_AMBER); }
     if (!isnan(s.t)) set_fmt(r.val, "%.1f\xC2\xB0", s.t); else set_txt(r.val, "--");
     set_col(r.val, s.role == R_FRIDGE && s.t > 7 ? C_RED : s.role == R_FREEZER && s.t > -12 ? C_RED : temp_color(s.t));
     lv_obj_align(r.val, LV_ALIGN_RIGHT_MID, -10, -6);

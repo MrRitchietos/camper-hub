@@ -92,7 +92,7 @@ static void cseg_cb(lv_event_t *e) { list_i = (int)(intptr_t)lv_event_get_user_d
 
 // ---------------------------------------------------------------- settings rows
 static void open_upd();
-enum { S_PLACE, S_WIFI, S_WEB, S_PASS, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_THEME, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_INFO, S_N };
+enum { S_PLACE, S_WIFI, S_WEB, S_PASS, S_AP, S_KEY, S_BATT, S_ALARM, S_BEEP, S_BRIGHT, S_THEME, S_SAVER, S_LOOK, S_SCROFF, S_LEN, S_WIDTH, S_TAG, S_ROT, S_DEMO, S_SD, S_UPD, S_CLOCK, S_INFO, S_N };
 static void open_sd(); static void open_web();
 static const int16_t ALARMS[] = {0, 1150, 1180, 1200, 1220, 1250, 1280};
 static void set_tap(int k) {
@@ -134,8 +134,9 @@ static void set_tap(int k) {
     case S_LEN: cfg.len_cm = cfg.len_cm >= 450 ? 300 : cfg.len_cm + 5; save_settings(); break;
     case S_WIDTH: cfg.width_cm = cfg.width_cm >= 200 ? 150 : cfg.width_cm + 5; save_settings(); break;
     case S_TAG: level_next_tag(); break;
-    case S_ROT: cfg.lvl_rot = (cfg.lvl_rot + 1) % 4; save_settings(); break;
+    case S_ROT: cfg.lvl_rot = (cfg.lvl_rot + 1) % 4; save_settings(); level_rot_changed(); break;
     case S_DEMO: set_demo(!demo_on); toast(demo_on ? "Demo on: everything is simulated" : "Demo off"); break;
+    case S_CLOCK: open_clock(); break;
     case S_INFO: break;
   }
   dirty = true;
@@ -208,6 +209,47 @@ static void open_web() {
   }), 10, 200);
   lv_obj_set_pos(button(m, "OK", 100, 32, C_TEAL, [](lv_event_t *) { close_modal(); }), 210, 200);
 }
+// ---------------------------------------------------------------- set the clock (no internet, no phone)
+static time_t sc_t;
+static lv_obj_t *sc_l;
+static void sc_show() {
+  static const char *WDN[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  static const char *MON[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  struct tm m; localtime_r(&sc_t, &m);
+  set_fmt(sc_l, "%s %d %s %d   %02d:%02d", WDN[m.tm_wday], m.tm_mday, MON[m.tm_mon], m.tm_year + 1900, m.tm_hour, m.tm_min);
+}
+void open_clock() {
+  uint8_t src; { Lock l; src = S.clock_src; }
+  if (src == CLK_NET) { toast("The clock comes from the internet: nothing to set"); return; }
+  time_t now = time(nullptr);
+  if (now < 1700000000) now = 1793577600;          // never set: start at 1 Nov 2026
+  sc_t = now - now % 60;
+  lv_obj_t *m = modal(LV_SYMBOL_BELL "  Set the clock");
+  char b[48]; snprintf(b, sizeof b, "Now: %s", clock_src_name(src));
+  lv_obj_t *st = label(m, F12, src <= CLK_SD ? C_AMBER : C_DIM, b);
+  lv_obj_set_pos(st, 10, 36);
+  sc_l = label(m, F20, C_WHITE, "");
+  lv_obj_align(sc_l, LV_ALIGN_TOP_MID, 0, 54);
+  sc_show();
+  static const char *NAME[] = {"Day", "Hour", "10 min", "Min"};
+  static const int STEP[] = {86400, 3600, 600, 60};
+  for (int g = 0; g < 4; g++) {
+    int x = 6 + g * 78;
+    lv_obj_t *n = label(m, F12, C_DIM, NAME[g]);
+    lv_obj_set_width(n, 74); lv_obj_set_style_text_align(n, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(n, x, 86);
+    for (int k = 0; k < 2; k++) {
+      intptr_t d = (k ? 1 : -1) * STEP[g];
+      lv_obj_set_pos(button(m, k ? LV_SYMBOL_PLUS : LV_SYMBOL_MINUS, 35, 40, C_CARD2, [](lv_event_t *e) {
+        sc_t += (intptr_t)lv_event_get_user_data(e); sc_show(); }, (void *)d), x + k * 39, 104);
+    }
+  }
+  lv_obj_t *h = label(m, F12, C_DIM, "Easier: open the phone page once, it sets the clock from the phone. WiFi or internet sets it too.");
+  lv_obj_set_width(h, 300); lv_label_set_long_mode(h, LV_LABEL_LONG_WRAP); lv_obj_set_pos(h, 10, 152);
+  lv_obj_set_pos(button(m, "Cancel", 100, 32, C_CARD2, [](lv_event_t *) { close_modal(); }), 10, 200);
+  lv_obj_set_pos(button(m, "Save", 190, 32, C_TEAL, [](lv_event_t *) { clock_set((long)sc_t, CLK_HAND); close_modal(); toast("Clock set"); }), 120, 200);
+}
+
 static void open_upd() {
   lv_obj_t *m = modal(LV_SYMBOL_DOWNLOAD "  Update");
   char b[160];
@@ -283,12 +325,11 @@ void web_drain() {
       else if (!strcmp(k, "thm")) { cfg.look_mode = clampi(v, 0, 2); look_request(); }
       else if (!strcmp(k, "wb")) cfg.len_cm = clampi(v, 250, 500);
       else if (!strcmp(k, "trk")) cfg.width_cm = clampi(v, 120, 250);
-      else if (!strcmp(k, "rot")) cfg.lvl_rot = clampi(v, 0, 3);
+      else if (!strcmp(k, "rot")) { cfg.lvl_rot = clampi(v, 0, 3); level_rot_changed(); }
       else if (!strcmp(k, "batt")) vic_settings(clampi(v, 0, 2), a);
       else if (!strcmp(k, "alarm")) vic_settings(b, v == 0 ? 0 : clampi(v, 1000, 1400));
       else if (!strcmp(k, "demo")) { if ((bool)v != demo_on) set_demo(v); }
       else if (!strcmp(k, "ap")) { cfg.ap = v; ap_enable(cfg.ap); }
-      else if (!strcmp(k, "zero")) level_zero();
       else if (!strcmp(k, "tag")) level_next_tag();
       save_settings();
     } else if (!strcmp(c.op, "chk")) {
@@ -447,6 +488,8 @@ void tools_update(bool force) {
   set_row(S_DEMO, LV_SYMBOL_PLAY "  Demo mode", demo_on ? "on" : "off", demo_on ? C_AMBER : C_DIM);
   set_row(S_SD, LV_SYMBOL_SD_CARD "  SD card", S.sd_ok ? S.sd_msg : "no card", S.sd_ok ? C_DIM : C_RED);
   set_row(S_UPD, LV_SYMBOL_DOWNLOAD "  Update", ota_msg[0] ? ota_msg : "check now", C_DIM);
+  set_row(S_CLOCK, LV_SYMBOL_BELL "  Clock", S.clock_src <= CLK_SD ? "not sure, set it" : clock_src_name(S.clock_src),
+          S.clock_src <= CLK_SD ? C_RED : S.clock_src == CLK_HAND ? C_AMBER : C_GREEN);
   snprintf(b, sizeof b, "%u KB free", (unsigned)(ESP.getFreeHeap() / 1024));
   set_row(S_INFO, LV_SYMBOL_SETTINGS "  Camper hub " FW_VERSION, b, C_DIM);
   uint32_t h = 2166136261u;                   // repaint only when a value changed (free memory ticks often, not every second)

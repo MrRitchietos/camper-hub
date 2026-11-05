@@ -99,7 +99,8 @@ static void api_state() {
   {
     Lock l;
     time_t now = time(nullptr); struct tm t;
-    if (now > 1700000000) { localtime_r(&now, &t); char b[20]; strftime(b, sizeof b, "%a %d %b %H:%M", &t); d["time"] = b; }
+    if (now > 1700000000) { localtime_r(&now, &t); char b[20]; strftime(b, sizeof b, "%a %d %b %H:%M", &t); d["time"] = b; d["now"] = (long)now; }
+    d["cs"] = S.clock_src; d["csn"] = clock_src_name(S.clock_src);
     d["demo"] = demo_on; d["heap"] = ESP.getFreeHeap();
     JsonObject w = d["wifi"].to<JsonObject>();
     w["ssid"] = S.ssid; w["on"] = S.wifi; w["net"] = S.online; w["portal"] = S.portal; w["rssi"] = S.rssi;
@@ -151,7 +152,7 @@ static void api_state() {
       }
     }
     JsonObject lv = d["lvl"].to<JsonObject>();
-    lv["ok"] = S.lvl_present; j_num(lv, "p", S.pitch, 2); j_num(lv, "r", S.roll, 2);
+    lv["ok"] = S.lvl_present; j_num(lv, "p", S.pitch, 2); j_num(lv, "r", S.roll, 2); lv["cal"] = S.lvl_cal;
     JsonObject st = d["set"].to<JsonObject>();
     st["bright"] = cfg.bright; st["beep"] = cfg.beep; st["saver"] = cfg.saver; st["scroff"] = cfg.scr_off; st["look"] = cfg.saver_look; st["thm"] = cfg.look_mode;
     st["wb"] = cfg.len_cm; st["trk"] = cfg.width_cm; st["rot"] = cfg.lvl_rot; st["batt"] = v.batt; st["alarm"] = v.alarm_cv;
@@ -254,6 +255,7 @@ static void routes() {
   srv->on("/api/state", HTTP_GET, [] { if (auth()) api_state(); });
   srv->on("/api/lists", HTTP_GET, [] { if (auth()) api_lists(); });
   srv->on("/api/files", HTTP_GET, [] { if (auth()) api_files(); });
+  srv->on("/api/time", HTTP_POST, [] { if (!auth()) return; clock_set(arg("t").toInt(), CLK_PHONE); ok(); });
   srv->on("/api/set", HTTP_POST, [] { if (!auth()) return; push("set", arg("k").c_str(), arg("v").toInt()); ok(); });
   srv->on("/api/check", HTTP_POST, [] { if (!auth()) return; push("chk", arg("op").c_str(), arg("i").toInt(), arg("l").toInt(), arg("t").c_str()); ok(); });
   srv->on("/api/bank", HTTP_POST, [] { if (!auth()) return; push("bank", "", arg("o").toInt(), arg("on").toInt()); ok(); });

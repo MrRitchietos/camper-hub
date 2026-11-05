@@ -98,6 +98,7 @@ void power_build(lv_obj_t *tab); void power_update(bool force);
 void climate_build(lv_obj_t *tab); void climate_update(bool force);
 void level_build(lv_obj_t *tab); void level_update();
 void open_place(); void place_picker_update();
+void open_clock();
 void bank_build(lv_obj_t *tab); void bank_page_update(bool force);
 void goto_tab(int i);
 void tools_build(lv_obj_t *tab); void tools_update(bool force);

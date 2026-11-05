@@ -81,9 +81,10 @@ static void sim_stroke(int x0, int y0, int x1, int y1, int ms) {
   int n = max(1, ms / 10);
   for (int i = 0; i <= n; i++) {
     sim_down = true; sim_x = x0 + (x1 - x0) * i / n; sim_y = y0 + (y1 - y0) * i / n;
+    lv_indev_read(lv_indev_get_next(nullptr));        // every step is seen, even when the read timer is not due
     lv_timer_handler(); esp_task_wdt_reset(); delay(10);
   }
-  sim_down = false; lv_timer_handler(); delay(10); lv_timer_handler();
+  sim_down = false; lv_indev_read(lv_indev_get_next(nullptr)); lv_timer_handler(); delay(10); lv_timer_handler();
 }
 static uint32_t tick_cb() { return millis(); }
 void app::screen_wake() { last_touch = millis(); want_wake = true; }
@@ -156,7 +157,12 @@ static void console() {
     } else if (cmd == "days") {
       Lock l; for (auto &d : S.days) Serial.printf(" %s %.2f kWh peak %u\n", d.date, d.yield_10wh / 100.0f, d.peak_w);
       Serial.printf("sd=%d %s rows=%u clock_est=%d\n", S.sd_ok, S.sd_msg, (unsigned)S.sd_rows, S.clock_est);
-    } else if (cmd == "ldr") Serial.printf("ldr raw %d avg %d\n", analogRead(ldr::PIN), ldr_avg);
+    } else if (cmd == "lvl") { char b[240]; level_raw(b, sizeof b); Serial.println(b); }
+    else if (cmd == "ruuvi") { app::ruuvi_dbg = !app::ruuvi_dbg; }
+    else if (cmd == "lvlclear") { level_cal_clear(); Serial.println("level calibration removed"); }
+    else if (cmd == "clock") { app::Lock l; Serial.printf("clock %ld src=%s est=%d\n", (long)time(nullptr), clock_src_name(S.clock_src), S.clock_est); }
+    else if (cmd.startsWith("clockset ")) { clock_set(cmd.substring(9).toInt(), CLK_HAND); Serial.println("clock set"); }
+    else if (cmd == "ldr") Serial.printf("ldr raw %d avg %d\n", analogRead(ldr::PIN), ldr_avg);
     else if (cmd == "wx") { Lock l; Serial.printf("wx ok=%d %s %.1fC code %d\n", S.wx.ok, S.wx.city, S.wx.t, S.wx.code); }
     else if (cmd == "sdtest") {   // raw card check on the default VSPI pins, outside the logger
       extern void sd_probe(); sd_probe();

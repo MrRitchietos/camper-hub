@@ -76,8 +76,8 @@ struct State {
   // wifi
   bool wifi = false, online = false, portal = false; char ssid[33] = ""; int8_t rssi = 0; char wifi_status[40] = "starting"; uint32_t ip = 0;
   std::vector<Ap> aps; bool scanning = false; uint32_t scan_ver = 0;
-  // clock: ok = set (NTP or restored), est = restored from SD, not confirmed by NTP
-  bool clock_ok = false, clock_est = false;
+  // clock: ok = set, est = only guessed from the last time saved on SD; src = where the time came from (CLK_*)
+  bool clock_ok = false, clock_est = false; uint8_t clock_src = 0;
   // sd
   bool sd_ok = false; uint32_t sd_used_kb = 0, sd_total_mb = 0, sd_rows = 0; char sd_msg[40] = "no card";
   // modules
@@ -88,6 +88,7 @@ struct State {
   Bank bank;
   bool lvl_present = false; float pitch = 0, roll = 0;     // degrees, + = front up / right up
   char lvl_tag[18] = "";                                   // RuuviTag used for the level
+  uint8_t lvl_cal = 0;                                     // 0 not calibrated, 1 level only, 2 level + front
   bool demo = false;
 };
 
@@ -118,7 +119,13 @@ const Sensor *sens_by_role(uint8_t r);  // call with the lock held
 bool level_begin();
 void level_poll();                      // UI loop while the Level tab is open
 void level_next_tag();
-void level_zero();
+void level_cal_start();                 // calibration steps, see level.cpp
+int level_measure(int step);             // 0 ok, 1 not enough samples yet, 2 moving, 3 front not raised enough
+void level_cal_skip(int step);
+void level_cal_save();
+void level_cal_clear();
+void level_rot_changed();
+void level_raw(char *out, size_t n);
 // fossibot.cpp
 void bank_switch(int output, bool on);   // 0 USB, 1 DC, 2 AC, 3 light
 bool bank_set(uint16_t reg, uint16_t val);
@@ -139,6 +146,9 @@ extern Places P;
 void place_search(const char *q);   // runs in the radio task
 void place_pin(const Place &p);     // also refreshes the forecast
 void place_auto();
+enum { CLK_NONE, CLK_SD, CLK_HAND, CLK_PHONE, CLK_WIFI, CLK_NET };   // better source = higher
+void clock_set(long epoch, uint8_t src);   // any task; ignored when a better source already set it (by hand always works)
+const char *clock_src_name(uint8_t src);
 void log_event(const char *fmt, ...);   // -> /camper/events.csv (any task)
 float hpa_trend(const Sensor &s);       // hPa change over the last 3 h (NAN = not enough data)
 // settings (main.cpp)

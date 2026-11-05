@@ -21,7 +21,7 @@ The screenshots are taken from the board in demo mode (Tools > Settings > Demo),
 <img src="docs/screens/days.png" width="260" alt="Days">
 </p>
 
-**Climate.** Thermometers for inside, outside, fridge and freezer, and the forecast for 48 hours and 7 days. The forecast is kept on the SD card, so it still shows without internet. The place follows the board's location or can be pinned to a town.
+**Climate.** Thermometers for inside, outside, fridge and freezer, and the forecast for 48 hours and 7 days. The forecast is kept on the SD card, so it still shows without internet. The place follows the board's location or can be pinned to a town. The inside sensor also shows the dew point and warns when the air is damp or the windows will mist up.
 
 <p>
 <img src="docs/screens/climate.png" width="260" alt="Climate">
@@ -35,7 +35,13 @@ The screenshots are taken from the board in demo mode (Tools > Settings > Demo),
 <img src="docs/screens/banksettings.png" width="260" alt="Power bank settings">
 </p>
 
-**Level.** A RuuviTag on the floor shows how level the van stands and how many cm to raise each wheel. Park on level ground once and tap Zero.
+**Level.** A RuuviTag shows how level the van stands and how many cm to raise each wheel. Fix the tag anywhere it cannot move: flat, on a wall or upside down, turned any way. Then tap Calibrate and follow the 3 steps:
+
+1. Park and measure.
+2. Turn the camper around with the wheels on the same spots and measure again. The slope of the ground flips with the van, the error of the tag does not, so no level ground is needed. On ground you know is level, skip this step.
+3. Raise only the front a bit (front wheels on the ramps) and measure. This tells the board where the front is. Skip it to use the arrow direction from Settings.
+
+Each step waits until the van stands still and averages the readings. A median filter removes single spikes, so the bubble stays calm while you sit inside but follows quickly when you drive onto the ramps.
 
 **Tools.** Checklists for leaving and arriving (tap to tick, hold to remove), the trip diary with one line per day, and all settings.
 
@@ -43,8 +49,10 @@ In Settings and Power bank settings only the value on the right (the rounded but
 
 <p>
 <img src="docs/screens/level.png" width="260" alt="Level">
+<img src="docs/screens/calibrate.png" width="260" alt="Calibrate the level">
 <img src="docs/screens/checklist.png" width="260" alt="Checklist">
 <img src="docs/screens/settings.png" width="260" alt="Settings">
+<img src="docs/screens/clock.png" width="260" alt="Set the clock">
 <img src="docs/screens/solar-day.png" width="260" alt="Solar in the day look">
 </p>
 
@@ -69,7 +77,18 @@ Open the board's address in a browser to see everything and change settings, the
 * Victron SmartSolar charger over Bluetooth (Instant Readout). Enter its key once: VictronConnect, the charger, gear icon, three dots, Product info, Instant readout details. The key is then locked: a new one is only accepted after you remove the old one on purpose (Settings > Victron key > Remove key)
 * Fossibot F1200 power bank (BrightEMS app protocol)
 * Thermometers: Xiaomi LYWSD03MMC with pvvx firmware, Shelly BLU H&T and other BTHome sensors, RuuviTag. Tap a sensor to set it as inside, outside, fridge or freezer. A fridge or freezer that is too warm, or a sensor that goes quiet, sounds an alarm
-* RuuviTag for the level page
+* RuuviTag for the level page (it also gives temperature, humidity and air pressure for the storm warning)
+
+## Clock without internet
+
+The board has no clock battery, so after a power cut it needs the time from somewhere. It takes the best source it can get:
+
+1. internet time (NTP)
+2. the time a WiFi sends with every web reply, which also works on a campsite WiFi that blocks NTP or wants a login first
+3. your phone: opening the phone page sets the clock from the phone by itself
+4. by hand: Tools > Settings > Clock, or tap the clock at the top when it shows "time? tap"
+
+Until then it carries on from the last time saved on the SD card, marked as a guess. Nothing is logged with a guessed time, so the trip diary never gets wrong dates.
 
 ## SD card
 
@@ -97,4 +116,4 @@ PlatformIO: `pio run -t upload`. An optional `include/secrets.hpp` can hold a fi
 
 Release builds leave it out: `tools/release.sh 1.2.0`.
 
-The serial console (115200 baud) has a few test commands, for example `demo` (toggle demo mode), `heap`, `tasks` and `shot` (a screenshot in the exact colours the board draws), plus `ls` and `cat <file>` to read the SD card logs, `fps` (how much of the screen is redrawn while idle) and `tap x y` / `swipe x0 y0 x1 y1 ms` to test touch handling.
+The serial console (115200 baud) has a few test commands, for example `demo` (toggle demo mode), `heap`, `tasks` and `shot` (a screenshot in the exact colours the board draws), plus `ls` and `cat <file>` to read the SD card logs, `fps` (how much of the screen is redrawn while idle), `lvl` (level sensor state and noise), `ruuvi` (print every RuuviTag reading), `clock` (time and where it came from) and `tap x y` / `swipe x0 y0 x1 y1 ms` to test touch handling.

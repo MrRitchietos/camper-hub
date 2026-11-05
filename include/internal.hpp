@@ -16,7 +16,8 @@ void sens_begin();
 void sens_parse(uint16_t uuid, const std::string &data, const char *addr, int rssi);
 void sens_tick();                                  // 1 s
 void sens_ruuvi(const std::string &mfg, const char *addr, int rssi);
-void level_accel(const char *addr, int ax, int ay, int az);
+extern bool ruuvi_dbg;                            // serial "ruuvi": print every RuuviTag advert
+void level_accel(const char *addr, int ax, int ay, int az, int seq);   // seq = measurement number (-1 none)
 // fossibot.cpp (radio task)
 void bank_seen(const void *nimble_dev);           // every advert: is it a BrightEMS station?
 void bank_service();                                // connect, poll every 2 s, reconnect
@@ -38,6 +39,7 @@ extern TaskHandle_t task_radio, task_sd, task_web;
 void ota_check(); void ota_boot_guard(); void ota_boot_ok(); void ota_request(); bool ota_wanted();
 extern char ota_msg[48]; extern volatile bool ota_done;                                  // unmount the card, then restart
 // time helpers
+void trips_check();                               // logger boot: drop diary rows out of date order
 bool clock_now(struct tm &t);                      // false until NTP or the SD-restored clock set it
 void fmt_date(char *out, size_t n, const struct tm &t);   // YYYY-MM-DD
 }  // namespace app

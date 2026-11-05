@@ -2,7 +2,7 @@
 # Taps the Alarm sound value twice (on, then back), so it ends as it started. Needs pyserial.
 import serial,time,sys
 s=serial.Serial('/dev/ttyUSB0',115200,timeout=0.2)
-time.sleep(1); s.read(100000)
+time.sleep(18); s.read(100000)   # opening the port restarts the board
 def c(x,t=60):
     s.write((x+'\n').encode()); o=b''; e=time.time()+t
     while time.time()<e:

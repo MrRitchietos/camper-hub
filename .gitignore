@@ -1,3 +1,4 @@
 .pio/
 include/secrets.hpp
 release/
+__pycache__/

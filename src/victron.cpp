@@ -148,7 +148,7 @@ static void close_day(Victron &v) {
   if (v.peak_w || v.ah_in > 0.05f || v.yield_10wh) {
     if (!demo_on) log_event("solar day closed: %d.%02d kWh", v.yield_10wh / 100, v.yield_10wh % 100);
     DayRec d{};
-    strlcpy(d.date, day_date[0] ? day_date : "????-??-??", sizeof d.date);
+    strlcpy(d.date, day_date[0] ? day_date : "\?\?\?\?-\?\?-\?\?", sizeof d.date);
     d.yield_10wh = v.yield_10wh == 0xFFFF ? 0 : v.yield_10wh;
     d.peak_w = v.peak_w; d.ah_in = v.ah_in; d.ah_load = v.ah_load;
     d.vmin_cv = v.vmin_cv; d.vmax_cv = v.vmax_cv;
@@ -228,7 +228,7 @@ void vic_tick() {
     if (last_yield != 0xFFFF && v.yield_10wh != 0xFFFF && v.yield_10wh + 2 < last_yield) {   // charger started a new day
       uint16_t y = v.yield_10wh; v.yield_10wh = last_yield; close_day(v); v.yield_10wh = y;
     }
-    if (!day_date[0] && tm_ok) fmt_date(day_date, sizeof day_date, t);
+    if (!day_date[0] && tm_ok && !S.clock_est) fmt_date(day_date, sizeof day_date, t);   // not from a guessed clock
   }
   last_yield = v.yield_10wh;
   if (v.state != last_state) { v.state_since = now; last_state = v.state; }

@@ -14,13 +14,31 @@ namespace app {
 static const char *WXFILE = "/camper/wx.json";
 static const char *WD[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
-// 204 = real internet; anything else (200 page, redirect) = a login page in between
+// "Thu, 05 Nov 2026 16:19:25 GMT" -> unix time (0 = not valid)
+static long http_date(const char *s) {
+  static const char *M = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  int d, y, h, mi, se; char mon[4] = "";
+  if (sscanf(s, "%*3s, %d %3s %d %d:%d:%d", &d, mon, &y, &h, &mi, &se) != 6 || strlen(mon) != 3) return 0;
+  const char *p = strstr(M, mon);
+  if (!p || (p - M) % 3 || y < 2025 || d < 1 || d > 31) return 0;
+  int m = (p - M) / 3 + 1;
+  y -= m <= 2;                                      // days from 1970-01-01 (civil calendar)
+  long era = y / 400, yoe = y - era * 400, doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  long days = era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468;
+  return days * 86400 + h * 3600L + mi * 60 + se;
+}
+
+// 204 = real internet; anything else (200 page, redirect) = a login page in between. The reply's Date header
+// sets the clock when NTP does not get through (campsite WiFi that blocks it, or a login page).
 static int net_check() {
   HTTPClient http;
   http.setTimeout(5000);
   http.useHTTP10(true);
   if (!http.begin("http://connectivitycheck.gstatic.com/generate_204")) return -1;
+  const char *keep[] = {"Date"};
+  http.collectHeaders(keep, 1);
   int code = http.GET();
+  if (code > 0) { long e = http_date(http.header("Date").c_str()); if (e) clock_set(e, CLK_WIFI); }
   http.end();
   return code;
 }

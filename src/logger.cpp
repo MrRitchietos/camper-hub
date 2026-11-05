@@ -14,7 +14,6 @@ namespace app {
 static SPIClass sd_spi(VSPI);
 static QueueHandle_t dayq, evq;
 struct Ev { char t[72]; };
-static bool clock_from_sd = false;
 
 bool clock_now(struct tm &t) {
   time_t now = time(nullptr);
@@ -33,11 +32,12 @@ void log_event(const char *fmt, ...) {
 static void write_event(const Ev &e) {
   struct tm t; char ts[20] = "unknown time";
   if (clock_now(t)) snprintf(ts, sizeof ts, "%04d-%02d-%02d %02d:%02d:%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+  bool est; { Lock l; est = S.clock_est; }
   bool fresh = !SD.exists("/camper/events.csv");
   File f = SD.open("/camper/events.csv", FILE_APPEND);
   if (!f) return;
   if (fresh) f.println("time,event");
-  f.printf("%s,%s%s\n", ts, e.t, demo_on ? " (demo)" : "");
+  f.printf("%s,%s%s%s\n", ts, e.t, demo_on ? " (demo)" : "", est ? " (time guessed)" : "");
   f.close();
 }
 static void write_bank() {
@@ -117,7 +117,22 @@ static void write_day(const DayRec &d) {
   f.close();
 }
 
-// ---- clock without internet
+// ---- clock without internet. Best source wins: internet (NTP) > the WiFi's own Date header (also behind a
+// campsite login page) > the phone page (the phone's clock) > set by hand > guessed from the last time on SD.
+// A guessed clock is shown as such and nothing is logged with it (wrong dates mixed up the trip diary).
+static const char *CLK_NAMES[] = {"not set", "guessed", "set by hand", "from phone", "from wifi", "internet"};
+const char *clock_src_name(uint8_t s) { return CLK_NAMES[s < 6 ? s : 0]; }
+static volatile bool clock_dirty = false;
+void clock_set(long e, uint8_t src) {
+  if (e < 1700000000L || e > 4000000000L) return;
+  uint8_t cur; { Lock l; cur = S.clock_src; }
+  if (src != CLK_HAND && src < cur) return;
+  long d = e - (long)time(nullptr);
+  if (src != CLK_NET) { timeval tv{(time_t)e, 0}; settimeofday(&tv, nullptr); }
+  { Lock l; S.clock_ok = true; S.clock_est = false; S.clock_src = src; }
+  clock_dirty = true;
+  if (cur < CLK_HAND || labs(d) > 90) log_event("clock %s (moved %+ld min)", clock_src_name(src), d / 60);
+}
 static void restore_clock() {
   if (time(nullptr) > 1700000000) return;
   File f = SD.open("/camper/clock.txt", FILE_READ);
@@ -125,10 +140,9 @@ static void restore_clock() {
   long e = f.parseInt();
   f.close();
   if (e < 1700000000) return;
-  timeval tv{(time_t)(e + 30), 0};                     // + roughly the boot time
+  timeval tv{(time_t)(e + 30), 0};                     // + roughly the boot time; the time switched off is unknown
   settimeofday(&tv, nullptr);
-  clock_from_sd = true;
-  Lock l; S.clock_ok = true; S.clock_est = true;
+  Lock l; if (S.clock_src == CLK_NONE) { S.clock_ok = true; S.clock_est = true; S.clock_src = CLK_SD; }
 }
 static void save_clock() {
   time_t now = time(nullptr);
@@ -178,6 +192,7 @@ static void task(void *) {
     sd_info();
     store_auto_restore();
     restore_clock();
+    trips_check();
     load_days();
     weather_load_cache();
   } else { Lock l; S.sd_ok = false; strcpy(S.sd_msg, "no card (FAT32, max 32 GB)"); }
@@ -196,17 +211,17 @@ static void task(void *) {
       if (demo_on) logger_demo_days(); else if (S.sd_ok) load_days(); else { Lock l; S.days.clear(); S.days_ver++; }
     }
     struct tm tn;
-    if (S.sd_ok && !demo_on && clock_now(tn) && tn.tm_min != last_min) { last_min = tn.tm_min; store_minute(tn); }
+    if (S.sd_ok && !demo_on && !S.clock_est && clock_now(tn) && tn.tm_min != last_min) { last_min = tn.tm_min; store_minute(tn); }
     if (S.sd_ok) store_service();
 
     Ev ev;
     while (xQueueReceive(evq, &ev, 0) == pdTRUE) if (S.sd_ok) write_event(ev);
-    if (S.sd_ok && millis() - last_clock > 60000) { last_clock = millis(); save_clock(); if (!demo_on) write_bank(); }
-    if (S.sd_ok && millis() - last_info > 600000) { last_info = millis(); sd_info(); }
-    if (clock_from_sd && S.clock_est) {                  // NTP took over: clock is real again
-      extern volatile bool ntp_synced;
-      if (ntp_synced) { Lock l; S.clock_est = false; }
+    if (S.sd_ok && (clock_dirty || millis() - last_clock > 60000)) {
+      bool tick = millis() - last_clock > 60000;
+      clock_dirty = false; last_clock = millis(); save_clock();
+      if (tick && !demo_on && !S.clock_est) write_bank();
     }
+    if (S.sd_ok && millis() - last_info > 600000) { last_info = millis(); sd_info(); }
     delay(200);
   }
 }

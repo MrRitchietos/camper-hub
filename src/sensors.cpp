@@ -108,6 +108,7 @@ void sens_parse(uint16_t uuid, const std::string &sd, const char *addr, int rssi
 
 // RuuviTag RAWv2 (format 5), manufacturer 0x0499: temp 0.005 C, humidity 0.0025 %, pressure +50000 Pa,
 // acceleration x/y/z in mG (all big endian), battery mV in the top 11 bits of the power field (+1600).
+bool ruuvi_dbg = false;
 void sens_ruuvi(const std::string &m, const char *addr, int rssi) {
   if (demo_on || m.size() < 2 + 24 || (uint8_t)m[2] != 0x05) return;
   const uint8_t *d = (const uint8_t *)m.data() + 3;
@@ -121,7 +122,8 @@ void sens_ruuvi(const std::string &m, const char *addr, int rssi) {
   if (u16(4) != 0xFFFF) {                                                  // pressure for the storm trend
     Lock l; for (auto &x : S.sensors) if (!strcmp(x.addr, addr)) x.hpa = (u16(4) + 50000) / 100.0f;
   }
-  if (s16(6) != (int16_t)0x8000) level_accel(addr, s16(6), s16(8), s16(10));
+  if (s16(6) != (int16_t)0x8000) level_accel(addr, s16(6), s16(8), s16(10), u16(15) == 0xFFFF ? -1 : u16(15));
+  if (ruuvi_dbg) Serial.printf("ruuvi %s %d %d %d mv %d mc %u seq %u\n", addr, s16(6), s16(8), s16(10), mv, d[14], (unsigned)u16(15));
 }
 
 // demo: inside warms in the afternoon, outside follows the weather, fridge cycles

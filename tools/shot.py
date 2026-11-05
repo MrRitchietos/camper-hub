@@ -8,7 +8,7 @@ def rd(t):
     while time.time()<e: o+=s.read(65536)
     return o
 def c(x,t=1.0): s.write((x+'\n').encode()); return rd(t)
-pre=sys.argv[1]; rd(0.5)
+pre=sys.argv[1]; rd(float(__import__("os").environ.get("SHOT_BOOT","18")))   # opening the port restarts the board
 for spec in sys.argv[2:]:
     cmds,name=spec.split('|')
     for x in cmds.split(';'):

@@ -48,7 +48,17 @@ static bool trip_parse(char *l, TripDay &d) {
   d.omin = fl(8); d.omax = fl(9); d.imin = fl(10); d.imax = fl(11); d.vmin = fl(12); d.kwh = fl(13); d.bmin = *f[14] ? atoi(f[14]) : -1;
   return true;
 }
+static char trip_last[11] = "";      // newest date in trips.csv (set by trips_load)
+static void trips_load();
+void trips_check() {                  // boot: clean the diary and learn its newest date, without keeping it in RAM
+  bool shown; { Lock l; shown = !trips.empty(); }
+  trips_load();
+  if (!shown) { Lock l; std::vector<TripDay>().swap(trips); trips_ver++; }
+}
 static void trip_append(const TripDay &d) {
+  if (!trip_last[0]) trips_check();
+  if (strcmp(d.date, trip_last) <= 0) { log_event("trip day %s not saved: %s is already in the diary", d.date, trip_last); return; }
+  strlcpy(trip_last, d.date, sizeof trip_last);
   bool fresh = !SD.exists(TRIPS);
   File f = SD.open(TRIPS, FILE_APPEND);
   if (!f) return;
@@ -64,20 +74,34 @@ static void trip_save_today() {
   f.println(row); f.close();
   SD.remove(TODAY); SD.rename("/camper/today.tmp", TODAY);
 }
+// rows must go up by date: rows out of order (from a wrong clock) are dropped and the file is cleaned once
+// (the old file is kept as trips.bak)
 static void trips_load() {
-  std::vector<TripDay> v;
+  std::vector<TripDay> v; std::vector<String> keep; int dropped = 0;
+  char last[11] = "";
   File f = SD.open(TRIPS);
   if (f) {
-    char line[220];
+    char line[220], copy[220];
     while (f.available()) {
       int n = f.readBytesUntil('\n', line, sizeof line - 1); line[n] = 0;
       if (n && line[n - 1] == '\r') line[n - 1] = 0;
+      strlcpy(copy, line, sizeof copy);
       TripDay d; if (!trip_parse(line, d)) continue;
+      if (strcmp(d.date, last) <= 0) { dropped++; continue; }
+      strlcpy(last, d.date, sizeof last);
+      keep.push_back(copy);
       v.push_back(d);
       if (v.size() > 60) v.erase(v.begin());
     }
     f.close();
   }
+  if (dropped) {
+    SD.remove("/camper/trips.bak"); SD.rename(TRIPS, "/camper/trips.bak");
+    File o = SD.open(TRIPS, FILE_WRITE);
+    if (o) { o.println(TRIP_HDR); for (auto &k : keep) o.println(k); o.close(); }
+    log_event("trip diary: %d rows with a wrong date removed (old file: trips.bak)", dropped);
+  }
+  strlcpy(trip_last, last[0] ? last : "0", sizeof trip_last);
   std::reverse(v.begin(), v.end());
   Lock l; trips = std::move(v); trips_ver++;
 }
